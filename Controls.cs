@@ -217,6 +217,15 @@ namespace AutoTyper
         }
     }
 
+    // A label that repaints without flicker, for text that changes many times a second.
+    class SteadyLabel : Label
+    {
+        public SteadyLabel()
+        {
+            DoubleBuffered = true;
+        }
+    }
+
     // Plain-text editor: shows a hint when empty and never pastes formatting.
     class TextEditor : RichTextBox
     {

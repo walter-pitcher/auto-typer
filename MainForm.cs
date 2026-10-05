@@ -15,6 +15,7 @@ namespace AutoTyper
         readonly TrackBar speed;
         readonly Label speedValue;
         readonly NumericUpDown typo;
+        readonly ComboBox remote;
         readonly CheckBox shiftEnter, skipIndent, pauseOnClick, onTop, keepText, remember;
         readonly Label savedLabel;
         readonly LinkLabel forget;
@@ -127,6 +128,21 @@ namespace AutoTyper
             opts.Controls.Add(typoRow, 1, 1);
             opts.SetColumnSpan(typoRow, 2);
 
+            opts.Controls.Add(Caption("Remote PC"), 0, 2);
+            var remoteRow = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(8, 0, 0, 4), BackColor = Theme.Card };
+            remote = new ComboBox { DropDownStyle = ComboBoxStyle.DropDownList, Width = 110, Margin = new Padding(0) };
+            remote.Items.AddRange(new object[] { "Automatic", "Always on", "Off" });  // order matches RemoteMode
+            remote.SelectedIndex = settings.Int("remote", 0, 0, remote.Items.Count - 1);
+            tips.SetToolTip(remote, "Remote desktop apps (Parsec, AnyDesk, Remote Desktop, ...) can drop symbols like ², — or é,\n" +
+                                    "and repeat a letter when keys come too fast. Remote PC mode types symbols as Alt codes\n" +
+                                    "and presses each key a little more deliberately. Automatic turns it on whenever you\n" +
+                                    "type into a remote desktop or virtual machine window.");
+            remoteRow.Controls.Add(remote);
+            remoteRow.Controls.Add(new Label { Text = "safer typing for Parsec, AnyDesk, Remote Desktop…", AutoSize = true,
+                                               ForeColor = Theme.Muted, Margin = new Padding(6, 4, 0, 0) });
+            opts.Controls.Add(remoteRow, 1, 2);
+            opts.SetColumnSpan(remoteRow, 2);
+
             var checks = Grid(Theme.Card, new ColumnStyle(SizeType.Percent, 50F), new ColumnStyle(SizeType.Percent, 50F));
             checks.Margin = new Padding(0, 6, 0, 0);
             shiftEnter = Check("Shift+Enter for new lines", "shiftEnter", false, "For chat apps where Enter sends the message.");
@@ -148,7 +164,7 @@ namespace AutoTyper
             checks.Controls.Add(onTop, 1, 1);
             checks.Controls.Add(rememberRow, 0, 2);
             checks.SetColumnSpan(rememberRow, 2);
-            opts.Controls.Add(checks, 0, 2);
+            opts.Controls.Add(checks, 0, 3);
             opts.SetColumnSpan(checks, 3);
             optCard.Controls.Add(opts);
             main.Controls.Add(optCard);
@@ -159,9 +175,12 @@ namespace AutoTyper
 
             var statusRow = Grid(Theme.Window, Fill(), Auto());
             statusRow.Margin = new Padding(0, 0, 0, 12);
-            status = new Label { AutoSize = false, AutoEllipsis = true, Dock = DockStyle.Fill, Height = 22,
-                                 TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(0) };
-            stats = new Label { AutoSize = true, ForeColor = Theme.Muted, Anchor = AnchorStyles.Right, Margin = new Padding(8, 0, 0, 0) };
+            status = new SteadyLabel { AutoSize = false, AutoEllipsis = true, Dock = DockStyle.Fill, Height = 22,
+                                       TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(0) };
+            // Fixed width: the numbers change many times a second, and a growing or shrinking
+            // label would keep shifting the layout next to it.
+            stats = new SteadyLabel { AutoSize = false, Size = new Size(250, 22), ForeColor = Theme.Muted,
+                                      TextAlign = ContentAlignment.MiddleRight, Margin = new Padding(8, 0, 0, 0) };
             statusRow.Controls.Add(status, 0, 0);
             statusRow.Controls.Add(stats, 1, 0);
             main.Controls.Add(statusRow);
@@ -206,6 +225,7 @@ namespace AutoTyper
                 UpdateCounts();
             };
             typo.ValueChanged += (s, e) => { if (plan != null) plan.TypoRate = (double)typo.Value / 100.0; };
+            remote.SelectedIndexChanged += (s, e) => { if (typist != null) typist.Remote = remote.SelectedIndex; };
             shiftEnter.CheckedChanged += (s, e) => { if (typist != null) typist.ShiftEnter = shiftEnter.Checked; };
             pauseOnClick.CheckedChanged += (s, e) => { if (typist != null) typist.PauseOnClick = pauseOnClick.Checked; };
             onTop.CheckedChanged += (s, e) => TopMost = onTop.Checked;
@@ -307,6 +327,7 @@ namespace AutoTyper
         {
             settings.Set("speed", speed.Value);
             settings.Set("typo", typo.Value);
+            settings.Set("remote", remote.SelectedIndex);
             foreach (CheckBox box in new[] { shiftEnter, skipIndent, pauseOnClick, onTop, keepText, remember })
                 settings.Set((string)box.Tag, box.Checked);
             settings.Save(keepText.Checked ? editor.Text : "");
@@ -348,10 +369,26 @@ namespace AutoTyper
 
         void KeepOnTop()
         {
+            // Only when something actually covers this window: re-raising it every time would keep
+            // swapping places with other always-on-top windows, and both would flicker.
             // NOACTIVATE: never steal focus from the window being typed into.
-            if (onTop.Checked)
+            if (onTop.Checked && IsCovered())
                 Native.SetWindowPos(Handle, Native.HWND_TOPMOST, 0, 0, 0, 0,
                                     Native.SWP_NOMOVE | Native.SWP_NOSIZE | Native.SWP_NOACTIVATE);
+        }
+
+        // Whether a visible window above this one overlaps it.
+        bool IsCovered()
+        {
+            Rectangle mine = Bounds;
+            for (IntPtr h = Native.GetWindow(Handle, Native.GW_HWNDPREV); h != IntPtr.Zero; h = Native.GetWindow(h, Native.GW_HWNDPREV))
+            {
+                Native.RECT r;
+                if (Native.IsWindowVisible(h) && !Native.IsIconic(h) && Native.GetWindowRect(h, out r) &&
+                    mine.IntersectsWith(Rectangle.FromLTRB(r.Left, r.Top, r.Right, r.Bottom)))
+                    return true;
+            }
+            return false;
         }
 
         bool SavedTargetAlive()
