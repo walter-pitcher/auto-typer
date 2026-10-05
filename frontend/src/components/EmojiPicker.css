@@ -1,6 +1,0 @@
-/* Portal shell: matches app chrome; picker internals use emoji-picker-react styles */
-.emoji-picker-portal {
-  border-radius: var(--radius, 8px);
-  overflow: hidden;
-  box-shadow: var(--shadow, 0 8px 24px rgba(0, 0, 0, 0.15));
-}

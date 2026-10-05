@@ -1,428 +1,110 @@
-<div align="center">
+# Auto Typer
 
-# Trutim
+Auto Typer types your text into any window on your PC, one key at a time, the way a real person would. Paste your text, click **Start Typing**, click into the box where it should go, and watch it type.
 
-**Real-time chat, collaboration, and voice-controlled platform for engineers and developers.** Built on Django Channels (WebSockets), WebRTC, and a TensorFlow-powered keyword spotting engine for hands-free voice control.
+![Auto Typer typing a short email into a Notes window, pausing, and picking back up](docs/demo.gif)
 
-## Features
+[Watch the full-quality video (MP4)](docs/demo.mp4)
 
-- **Live Chat** — Real-time messaging with WebSockets, emoji reactions, typing indicators
-- **Video Call** — WebRTC-based video conferencing with multiple participants
-- **Screen Share** — Share your screen during calls
-- **Strong Emojis** — Quick emoji bar + full emoji picker, message reactions
-- **Voice Control** — Hands-free platform control via wake word detection and keyword spotting
-- **Wake Word Engine** — Deep learning "Trutim" wake word detector with real-time streaming
-- **Keyword Spotting** — 25-keyword vocabulary for voice commands (call, message, join, mute, etc.)
-- **Automatic Speech Recognition** — CTC-based ASR with command-constrained decoding
+In the clip above, Auto Typer types a short note at about 105 words per minute. It makes a couple of typos along the way and fixes them. Partway through, we click on Auto Typer's own window, so typing pauses. Then we hit **Resume** and it picks up right where it left off.
 
+## What it does
 
+- **Types like a person.** The rhythm speeds up and slows down on its own. Common letter pairs come out faster, and it takes little breaks after commas, periods, and new lines. Every now and then it hits a wrong key, notices, backspaces, and fixes it.
+- **Shows you where it is.** Text that's already typed turns green, and the next letter gets a yellow marker. You'll also see live words per minute and how much time is left.
+- **Pauses when you need it to.** Switch to another window, click somewhere, or press **Esc**, and typing stops right away. Click **Resume** and it goes back to the same window and keeps going from the same letter. If it stopped in the middle of a typo, it cleans that up first.
+- **Types just part of your text.** Highlight a section before you hit Start, and it types only that.
+- **Types into remote computers, too.** Run it on your own PC and click into a Remote Desktop, Parsec, AnyDesk, or similar window. The text gets typed on the remote machine, just like you were typing it yourself. It notices when you're typing into a remote window and switches to a more careful mode on its own.
+- **Remembers where it typed last time.** Next time you hit Start, it switches straight back to that window. No clicking needed.
+- **Handles accents, symbols, and emoji.** If a character isn't on your keyboard (like é or 😀), it still gets typed.
+- **Remembers your settings.** Your speed, options, and text are still there the next time you open it.
 
----
+## Getting started
 
-## Tech Stack
+You'll need Windows 10 or 11. There's nothing to install.
 
-| Layer | Technologies |
-|-------|-------------|
-| **Backend** | Django 4.x, Django REST Framework, Django Channels, Daphne (ASGI) |
-| **Database** | PostgreSQL 15 |
-| **Frontend** | React 19, Vite 7 |
-| **Auth** | JWT (SimpleJWT) |
-| **Real-time** | WebSockets (Channels), WebRTC |
-| **Voice / ML** | TensorFlow, TensorFlow Lite, NumPy, SciPy |
-| **DSP** | MFCC, Mel Spectrograms, Spectral Subtraction, Wiener Filtering, VAD |
-| **Deep Learning** | DS-CNN, BiLSTM + Attention, TC-ResNet, Conformer, Multi-Head Spotter |
+1. Download [`dist/AutoTyper.exe`](dist/AutoTyper.exe) and double-click it.
+2. Paste or type your text into the big box.
+3. Set the speed and how often you want typos (set it to 0% if you don't want any).
+4. Click **Start Typing** (or press **Ctrl+Enter**).
+5. Click into the text box where you want the text to go, whether that's an email, a document, a chat window, or even a box on a remote computer. Typing starts a moment later.
 
----
+Keep your hands off the keyboard while it types. If you're holding down Ctrl, Alt, or the Windows key, Auto Typer waits until you let go so it doesn't accidentally trigger a shortcut.
 
-</div>
+## Pausing and resuming
 
----
+Typing pauses when:
 
-## Table of Contents
+- you switch to another window,
+- you click anywhere (you can turn this off, see below),
+- you press **Esc**, or
+- you click **Pause**.
 
-- [Overview](#overview)
-- [Features](#features)
-- [Tech Stack](#tech-stack)
-- [Prerequisites](#prerequisites)
-- [Quick Start](#quick-start)
-- [Configuration](#configuration)
-- [Project Structure](#project-structure)
-- [API Reference](#api-reference)
-- [WebSocket Endpoints](#websocket-endpoints)
-- [Development](#development)
-- [Production Deployment](#production-deployment)
+When it pauses, the next letter to type turns orange and the big button turns into a green **Resume** button. Click it and Auto Typer brings the same window back to the front, puts the cursor back in that box, and keeps going.
 
----
+<img src="docs/paused.png" alt="Auto Typer paused partway through, with the next letter marked in orange and a green Resume button" width="520">
 
-## Overview
+One thing to watch for: Auto Typer can't see inside other apps. So if you click somewhere else in the box while it's paused, it'll continue from wherever your cursor is now. Just click back at the end of the text before you hit Resume.
 
-Trutim is a **professional-grade collaboration platform** designed specifically for engineering teams and developers. Whether you're pair programming across time zones, conducting stand-ups, or debugging together—Trutim keeps everyone in sync with sub-second message delivery and crystal-clear video calls.
+Want to start over instead? Click **Stop**.
 
-Built on a solid foundation of **Django Channels** (WebSockets) and **WebRTC**, the platform eliminates the friction of traditional communication tools. Messages appear instantly. Video connects peer-to-peer. And when you need a coding buddy, the in-app AI assistant is just one click away.
+## Options
 
----
+| Option | What it's for |
+| --- | --- |
+| **Speed** | How fast it types, in words per minute. Most people type somewhere between 40 and 80. The pauses and typo fixes are built into the speed, so longer texts finish close to what you set. Short ones run a little slower, since it eases into it at the start like a person would. |
+| **Typos** | The chance that any given letter comes out wrong (then gets fixed). Around 1–3% looks natural. Set it to 0 to turn typos off. |
+| **Shift+Enter for new lines** | Turn this on for chat apps like Slack, Teams, or WhatsApp, where pressing Enter sends the message. |
+| **Skip spaces at line starts** | For code editors that indent new lines for you. Without it, you'd end up with double indentation. |
+| **Remote PC** | Remote desktop apps sometimes lose symbols like ², — or é, and can repeat a letter when keys come in too fast ("angullllar"). Remote PC mode fixes both: it presses each key a little more deliberately and types symbols as Windows Alt codes, which always get through. **Automatic** turns it on whenever you type into Parsec, AnyDesk, Remote Desktop, TeamViewer, RustDesk, VNC, VMware, VirtualBox, or Hyper-V. If your remote app isn't on that list, choose **Always on**. |
+| **Pause when I click** | Pauses on any mouse click, since a click can move the cursor. Turn it off if you want to keep clicking around while it types. |
+| **Always on top** | Keeps the Auto Typer window above everything else so you can always see the progress. |
+| **Keep text after closing** | Saves your text so it's still there next time. Turn it off if you're typing anything private. |
+| **Remember target** | After a run, it remembers the window it typed into, and the next Start goes right back there. Click **Forget** to clear it. |
 
-## Features
+## Keyboard shortcuts
 
-<img src="docs/assets/chat-lightning.svg" alt="Lightning-fast chat" width="80" height="80" align="right">
+| Keys | What they do |
+| --- | --- |
+| **Ctrl+Enter** | Start typing (or resume) while the Auto Typer window is active |
+| **Esc** | Pause typing, no matter which window you're in |
 
-### Live Chat
-Real-time messaging powered by WebSockets—no polling, no refresh. Messages are delivered instantly to all participants in a room. Supports persistent history, so you never lose context when rejoining a conversation.
+## Tips and troubleshooting
 
-### Video Calls
-WebRTC-based peer-to-peer video conferencing with minimal latency. Start a call from any chat room; no external meeting links required. Built-in screen sharing lets you share your IDE, terminal, or browser during active calls.
+**Nothing shows up in a certain app.** If that app is running as administrator, Windows won't let a regular app type into it. Right-click Auto Typer and choose **Run as administrator**, then try again.
 
-### Emoji & Reactions
-Express yourself with a quick emoji bar, full emoji picker, and message reactions. Because sometimes a 👍 says more than a paragraph.
+**Typing on a remote computer.** You don't have to install anything on the remote machine. Keep Auto Typer on your own PC, click Start Typing, then click inside the remote window, right where the text should go. Auto Typer sends real key presses, so Remote Desktop, Parsec, AnyDesk, and similar tools pass them along like your own typing. A few things help:
 
-### User Profiles
-Custom profiles with username, email, and professional title. Upload avatars and manage your presence across the platform.
+- Use the same keyboard layout (like US English) on both computers. Otherwise some symbols can come out as different characters.
+- Keep the remote window in front while it types. Switching away pauses it, same as always.
+- The status line says "Typing in Remote PC mode" when the careful mode is on. If it doesn't, set **Remote PC** to **Always on**.
+- Alt codes need the remote computer to be running Windows. They cover the common symbols (², ³, ±, ×, ÷, °, ½, curly quotes, dashes, €, ≤, ≥, √, π, ∞, accented letters, and more). A math minus sign (−) goes in as a regular hyphen, which looks the same. If a symbol has no Alt code at all (emoji, for example), Auto Typer tells you to double-check it on the other PC when it's done.
 
-<p align="center">
-  <img src="docs/screenshots/Screenshot%202026-03-24%20110819.png" alt="Register screen with Google and GitHub OAuth options" width="560" />
-</p>
+**Letters get repeated, like "angullllar".** That happens on remote computers when a key press arrives too fast and the other side thinks the key is still held down. Remote PC mode prevents it. Make sure it's on (see above).
 
-### Room Management
-Create and join chat rooms with ease. Each room maintains its own message history and participant list. Organize by project, team, or topic.
+**A few characters look wrong in one app.** Some apps (mostly games) ignore characters that aren't on the keyboard, like é or emoji. Plain letters, numbers, and punctuation work everywhere. Setting **Remote PC** to **Always on** often helps there too, since it types symbols as Alt codes.
 
-<p align="center">
-  <img src="docs/screenshots/Screenshot%202026-03-24%20111404.png" alt="Main chat workspace with contacts and message composer" width="900" />
-</p>
+**Where are my settings stored?** In `%APPDATA%\AutoTyper` (paste that into File Explorer's address bar). Delete the folder to reset everything. Nothing ever leaves your computer, and Auto Typer doesn't use the internet at all.
 
-<img src="docs/assets/ai-brain.svg" alt="AI Assistant" width="80" height="80" align="right">
+Please only use Auto Typer where automated typing is allowed.
 
-### AI Assistant
-An in-app AI chat panel powered by the **Vercel AI SDK** and **OpenAI** (streaming). Ask questions, get code suggestions, or brainstorm—without leaving the app. Optional; enable with your OpenAI API key.
+## Building it yourself
 
-### AI Image Generate
-Generate images from text prompts directly in chat using **OpenAI DALL-E**. Click the image icon in the message toolbar, describe the image you want, and send it to the conversation.
+You don't need Visual Studio or anything else installed. Windows already comes with the C# compiler this project uses.
 
-### Share Code Panel
-A dedicated panel for sharing code snippets. Click the code icon in the room header to open it. Paste code, optionally select a language, preview it, and share to chat with proper formatting.
+1. Download or clone this folder.
+2. Double-click `build.bat`.
+3. Your new copy shows up at `dist\AutoTyper.exe`.
 
-### Voice Control Panel
-Use the dedicated voice control modal to start/stop listening, monitor wake-word detection state, and type fallback commands when needed.
+If the build says it can't write the file, close Auto Typer first and run it again.
 
-<p align="center">
-  <img src="docs/screenshots/Screenshot%202026-03-24%20111504.png" alt="Voice control modal listening for wake word" width="760" />
-</p>
-
-### Video Call Experience
-Start room calls with one click, invite teammates via room link, and control mute/video/screen-share directly from the call toolbar.
-
-<p align="center">
-  <img src="docs/screenshots/Screenshot%202026-03-24%20111548.png" alt="Video call screen with call controls and connection status" width="900" />
-</p>
-
----
-
-## Tech Stack
-
-| Layer | Technologies |
-|-------|--------------|
-| **Backend** | Django 4.x, Django REST Framework, Django Channels, Daphne |
-| **Authentication** | JWT (Simple JWT) |
-| **Database** | PostgreSQL (production) / SQLite (development) |
-| **Real-time** | WebSockets, WebRTC |
-| **Frontend** | React 19, Vite 7 |
-| **AI Chat** | Vercel AI SDK (@ai-sdk/react), OpenAI API |
-| **HTTP Client** | Axios |
-
----
-
-## Prerequisites
-
-- **Node.js** 18+ and npm
-- **Python** 3.10+
-- **PostgreSQL** 15+ (optional for development; SQLite is used by default)
-- **Redis** (optional; required for production WebSocket scaling)
-
----
-
-## Quick Start
-
-### 1. Clone and Install Dependencies
-
-```bash
-<<<<<<< HEAD
-git clone <repository-url>
-cd sean
-=======
-docker compose up -d db
->>>>>>> 9d4d154 (update chatting)
-```
-
-### 2. Backend Setup
-
-```bash
-cd backend
-python -m venv venv
-
-# Windows (CMD)
-venv\Scripts\activate
-
-# Windows (PowerShell) / Unix / macOS
-source venv/bin/activate   # or: . venv/Scripts/activate on Windows Git Bash
-
-pip install -r requirements.txt
-```
-
-### 3. Database Setup
-
-**Option A: SQLite (default, no setup required)**
-
-The project uses SQLite by default for development. No additional configuration needed—perfect for getting started quickly.
-
-**Option B: PostgreSQL**
-
-```bash
-# Using Docker
-docker-compose up -d db
-
-# Or run PostgreSQL manually
-docker run -d --name trutim-db \
-  -e POSTGRES_DB=trutim_db \
-  -e POSTGRES_USER=postgres \
-  -e POSTGRES_PASSWORD=postgres \
-  -p 5432:5432 \
-  postgres:15-alpine
-```
-
-Set `USE_SQLITE=False` and configure database environment variables (see [Configuration](#configuration)).
-
-### 4. Run Migrations
-
-```bash
-cd backend
-python manage.py migrate
-python manage.py createsuperuser   # Optional: for Django admin access
-```
-
-### 5. Start Backend Server
-
-```bash
-# ASGI server (required for WebSockets)
-daphne -b 0.0.0.0 -p 8001 trutim.asgi:application
-```
-
-> **Note:** The frontend proxy expects the backend on port **8001**. Use `runserver` for API-only testing: `python manage.py runserver 8001`
-
-### 6. Frontend Setup
-
-```bash
-# From project root
-cd frontend
-npm install
-npm run dev
-```
-
-The application will be available at **http://localhost:5173**.
-
-### 7. (Optional) Enable AI Assistant
-
-To use the in-app AI chat panel, set your OpenAI API key:
-
-```bash
-# Unix / macOS / Git Bash
-export OPENAI_API_KEY=sk-your-key-here
-
-# Windows CMD
-set OPENAI_API_KEY=sk-your-key-here
-```
-
-Then click the **AI** button in the header to open the assistant.
-
----
-
-## Configuration
-
-### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DJANGO_SECRET_KEY` | (dev default) | Secret key for Django; **must be set in production** |
-| `DEBUG` | `True` | Set to `False` in production |
-| `USE_SQLITE` | `True` | Use SQLite (`True`) or PostgreSQL (`False`) |
-| `DB_NAME` | `trutim_db` | PostgreSQL database name |
-| `DB_USER` | `postgres` | PostgreSQL user |
-| `DB_PASSWORD` | `postgres` | PostgreSQL password |
-| `DB_HOST` | `localhost` | Database host |
-| `DB_PORT` | `5432` | Database port |
-| `OPENAI_API_KEY` | — | OpenAI API key for the AI Assistant and AI Image Generate (optional) |
-| `OPENAI_MODEL` | `gpt-4o-mini` | OpenAI model for chat (e.g. `gpt-4o`, `gpt-4o-mini`) |
-| `OPENAI_IMAGE_MODEL` | `dall-e-3` | OpenAI model for image generation |
-| `GOOGLE_OAUTH_CLIENT_ID` | — | Google OAuth client ID for backend code exchange |
-| `GOOGLE_OAUTH_CLIENT_SECRET` | — | Google OAuth client secret for backend code exchange |
-| `GITHUB_OAUTH_CLIENT_ID` | — | GitHub OAuth app client ID for backend code exchange |
-| `GITHUB_OAUTH_CLIENT_SECRET` | — | GitHub OAuth app client secret for backend code exchange |
-
-Frontend (`frontend/.env`):
-
-| Variable | Description |
-|----------|-------------|
-| `VITE_GOOGLE_CLIENT_ID` | Google OAuth client ID used by the browser redirect |
-| `VITE_GITHUB_CLIENT_ID` | GitHub OAuth app client ID used by the browser redirect |
-
-OAuth callback URLs to register in both providers:
-
-- `http://localhost:5173/oauth/callback/google`
-- `http://localhost:5173/oauth/callback/github`
-
-### Example: PostgreSQL Configuration
-
-```bash
-# Windows CMD
-set USE_SQLITE=False
-set DB_NAME=trutim_db
-set DB_USER=postgres
-set DB_PASSWORD=postgres
-set DB_HOST=localhost
-set DB_PORT=5432
-
-# Unix / macOS / Git Bash
-export USE_SQLITE=False
-export DB_NAME=trutim_db
-export DB_USER=postgres
-export DB_PASSWORD=postgres
-export DB_HOST=localhost
-export DB_PORT=5432
-```
-
-For production, use a `.env` file with `python-dotenv` or your deployment platform's secrets manager.
-
----
-
-## Project Structure
-
-```
-sean/
-├── backend/
-│   ├── chat/                 # Chat application
-│   │   ├── ai_views.py       # AI chat streaming endpoint
-│   │   ├── consumers.py      # WebSocket consumers (chat, call signaling)
-│   │   ├── middleware.py     # JWT auth for WebSockets
-│   │   ├── models.py         # User, Room, Message
-│   │   ├── routing.py        # WebSocket URL routing
-│   │   ├── serializers.py    # DRF serializers
-│   │   ├── urls.py           # REST API routes
-│   │   └── views.py          # API views
-│   ├── trutim/               # Django project settings
-│   │   ├── asgi.py           # ASGI application (Channels)
-│   │   ├── settings.py
-│   │   └── urls.py
-│   ├── manage.py
-│   └── requirements.txt
-│
-├── frontend/
-│   ├── src/
-│   │   ├── components/       # AIPromptPanel, EmojiPicker, VideoCall
-│   │   ├── context/          # AuthContext
-│   │   ├── hooks/            # useChatSocket, useCallSocket
-│   │   ├── pages/            # Login, Register, Dashboard, Room
-│   │   └── api.js            # Axios API client
-│   ├── package.json
-│   └── vite.config.js
-├── docs/
-│   └── assets/               # README illustrations
-├── docker-compose.yml        # PostgreSQL service
-└── README.md
-```
-
----
-
-## API Reference
-
-Base URL: `http://localhost:8001/api` (or your backend host)
-
-### Authentication
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/auth/register/` | Register a new user |
-| `POST` | `/api/auth/login/` | Login; returns JWT access and refresh tokens |
-| `POST` | `/api/auth/oauth/google/` | Sign in/up with Google OAuth (returns JWT access/refresh + user) |
-| `POST` | `/api/auth/oauth/github/` | Sign in/up with GitHub OAuth (returns JWT access/refresh + user) |
-| `POST` | `/api/auth/refresh/` | Refresh access token |
-
-### Protected Endpoints (require `Authorization: Bearer <token>`)
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/rooms/` | List rooms |
-| `POST` | `/api/rooms/` | Create a room |
-| `GET` | `/api/messages/?room=<id>` | List messages for a room |
-| `GET` | `/api/users/` | List users (ViewSet) |
-| `POST` | `/api/ai/chat/` | AI chat (streaming; requires `OPENAI_API_KEY`) |
-| `POST` | `/api/ai/image/` | AI image generation (DALL-E; requires `OPENAI_API_KEY`) |
-
----
-
-## WebSocket Endpoints
-
-<img src="docs/assets/realtime-rocket.svg" alt="Real-time rocket" width="60" height="60" align="right">
-
-| Endpoint | Purpose |
-|----------|---------|
-| `ws://host:8001/ws/chat/<room_id>/?token=<jwt>` | Real-time chat messaging |
-| `ws://host:8001/ws/call/<room_id>/?token=<jwt>` | WebRTC signaling for video calls |
-
-Include the JWT access token in the `token` query parameter for authentication.
-
----
-
-## Development
-
-### Root Scripts
-
-From the project root:
-
-```bash
-npm run dev      # Start frontend dev server
-npm run build    # Build frontend for production
-npm run preview  # Preview production build
-```
-
-### Linting
-
-```bash
-cd frontend
-npm run lint
-```
-
-### Django Admin
-
-Access the admin panel at `http://localhost:8001/admin/` after creating a superuser.
-
----
-
-## Production Deployment
-
-1. **Set production environment variables:**
-   - `DEBUG=False`
-   - `DJANGO_SECRET_KEY` (generate a secure random key)
-   - Configure `ALLOWED_HOSTS` and `CORS_ALLOWED_ORIGINS`
-   - `OPENAI_API_KEY` (optional; for AI Assistant)
-
-2. **Use PostgreSQL** (set `USE_SQLITE=False` and configure `DB_*` variables).
-
-3. **Use Redis for Channels** (required for multi-worker/multi-server):
-   ```python
-   CHANNEL_LAYERS = {
-       'default': {
-           'BACKEND': 'channels_redis.core.RedisChannelLayer',
-           'CONFIG': {'hosts': [('redis-host', 6379)]},
-       }
-   }
-   ```
-
-4. **Serve static files:** Run `python manage.py collectstatic` and configure your web server (e.g., Nginx) to serve them.
-
-5. **Build frontend:** `npm run build` and serve the `frontend/dist` output via your web server or CDN.
-
-6. **Use a production ASGI server:** Daphne, Uvicorn, or Hypercorn behind a reverse proxy (Nginx, Caddy).
-
----
-
-## License
-
-Proprietary. All rights reserved.
+### How the code is organized
+
+| File | What's in it |
+| --- | --- |
+| `TypingPlan.cs` | Decides what to press and when: the rhythm, the pauses, and the typos |
+| `Typist.cs` | Sends the actual key presses and watches for anything that should pause typing |
+| `MainForm.cs` | The window layout and options |
+| `MainForm.Typing.cs` | Starting, pausing, resuming, the green highlight, and the live stats |
+| `Controls.cs` | Colors, the custom buttons and progress bar, and saved settings |
+| `AutoTyper.cs` | The entry point |
