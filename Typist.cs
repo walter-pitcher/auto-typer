@@ -27,6 +27,7 @@ namespace AutoTyper
         public const int VK_ESCAPE = 0x1B;
         public const int VK_LWIN = 0x5B;
         public const int VK_RWIN = 0x5C;
+        public const int VK_NUMPAD0 = 0x60;
         public const int SM_SWAPBUTTON = 23;
         public const uint GA_ROOT = 2;
         public static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
@@ -61,6 +62,14 @@ namespace AutoTyper
         [StructLayout(LayoutKind.Sequential)]
         public struct POINT { public int X; public int Y; }
 
+        [StructLayout(LayoutKind.Sequential)]
+        public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+
+        public const uint GW_HWNDPREV = 3;
+        [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr hwnd, uint cmd);
+        [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
+        [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
+
         [DllImport("user32.dll", SetLastError = true)] public static extern uint SendInput(uint count, INPUT[] inputs, int size);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern uint MapVirtualKey(uint code, uint mapType);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern short VkKeyScanEx(char ch, IntPtr layout);
@@ -93,23 +102,56 @@ namespace AutoTyper
         public Stopped(string message, bool canResume) : base(message) { CanResume = canResume; }
     }
 
+    // Remote PC mode: on, off, or on only for remote desktop / virtual machine windows.
+    enum RemoteMode { Automatic, On, Off }
+
     class Typist
     {
         static readonly Stopwatch Clock = Stopwatch.StartNew();
         // Clicking the desktop or taskbar should not start typing there.
         static readonly HashSet<string> ShellClasses = new HashSet<string> { "Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd" };
 
+        // Remote desktop and virtual machine windows (process names). They forward key presses to
+        // the other PC, but often drop the Unicode key events used for symbols that aren't on the
+        // keyboard, and a fast key-up that gets lost makes the other PC auto-repeat the key.
+        static readonly HashSet<string> RemoteViewers = new HashSet<string>(StringComparer.OrdinalIgnoreCase) {
+            "mstsc", "msrdc", "parsecd", "anydesk", "teamviewer", "rustdesk", "vncviewer", "tvnviewer", "nxplayer",
+            "vmware", "vmplayer", "virtualboxvm", "vmconnect",
+        };
+
+        // In Remote PC mode every key is held at least this long, with at least this gap before
+        // the next one, so the remote side sees each press and release clearly.
+        const double RemoteHold = 0.045, RemoteGap = 0.035;
+
+        // Characters with no Alt code that look exactly like a keyboard character (minus signs, hyphens).
+        static readonly Dictionary<char, char> Lookalikes = new Dictionary<char, char> {
+            {'−', '-'}, {'‐', '-'}, {'‑', '-'}, {'‒', '-'}, {'﹣', '-'}, {'－', '-'},
+        };
+
+        static readonly Encoding Ansi = Encoding.GetEncoding(1252, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
+        static readonly Encoding Oem = Encoding.GetEncoding(437, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
+
         readonly Random rng = new Random();
         readonly IntPtr own;  // this app's window
         volatile bool stopRequested, pauseRequested;
         IntPtr target = IntPtr.Zero;
         IntPtr layout = IntPtr.Zero;
+        volatile bool remoteTarget;
+        double lastKeyUp;
 
         public volatile int Progress;      // text[0..Progress) is typed correctly
         public volatile int Dirty;         // keys typed after Progress that are still in the box (a typo in progress)
         public volatile bool Typing;       // keys are being sent (not waiting for the target)
         public volatile bool ShiftEnter;   // new line = Shift+Enter
         public volatile bool PauseOnClick;
+        public volatile int Remote;        // a RemoteMode
+        public volatile int UnsureSymbols; // symbols with no Alt code, sent as Unicode to a remote window
+
+        // Careful key timing, and symbols as Alt codes: always, or (Automatic) for remote desktop / VM windows.
+        public bool InRemoteMode
+        {
+            get { return Remote == (int)RemoteMode.On || (Remote == (int)RemoteMode.Automatic && remoteTarget); }
+        }
 
         public Typist(IntPtr own, bool shiftEnter, bool pauseOnClick)
         {
@@ -134,8 +176,23 @@ namespace AutoTyper
         {
             uint pid;
             layout = Native.GetKeyboardLayout(Native.GetWindowThreadProcessId(hwnd, out pid));
+            remoteTarget = IsRemoteViewer(pid);
+            lastKeyUp = 0;
             target = hwnd;
             ForgetEarlierPresses();  // the click that picked the box must not pause typing
+        }
+
+        static bool IsRemoteViewer(uint pid)
+        {
+            try
+            {
+                using (Process p = Process.GetProcessById((int)pid))
+                    return RemoteViewers.Contains(p.ProcessName);
+            }
+            catch (Exception)
+            {
+                return false;
+            }
         }
 
         static double Now() { return Clock.Elapsed.TotalSeconds; }
@@ -308,7 +365,7 @@ namespace AutoTyper
                 short scan = Native.VkKeyScanEx(ch, layout);
                 if (scan == -1 || (scan & 0x600) != 0)  // not on this keyboard layout, or needs Ctrl/Alt
                 {
-                    TapUnicode(ch, hold);
+                    TypeSymbol(ch, hold);
                     return;
                 }
                 bool shift = (scan & 0x100) != 0;
@@ -318,29 +375,130 @@ namespace AutoTyper
             }
         }
 
-        // Taps are never interrupted, so a key is never left held down.
-        void Tap(int vk, double hold, bool shift)
+        // A character that isn't on the keyboard, like ², — or é. Unicode key events work in apps on
+        // this PC, but remote desktop and VM windows often drop them, so there it goes in as a
+        // Windows Alt code (Alt + digits on the number pad): plain key presses that get through.
+        void TypeSymbol(char ch, double hold)
         {
-            if (shift)
+            if (InRemoteMode)
             {
-                Key(Native.VK_SHIFT, false);
-                Sleep(Uniform(0.015, 0.04));
+                string code = AltCode(ch);
+                if (code != null)
+                {
+                    TapAltCode(code);
+                    return;
+                }
+                char plain;
+                if (Lookalikes.TryGetValue(ch, out plain))
+                {
+                    Press(plain, hold);
+                    return;
+                }
+                if (!char.IsLowSurrogate(ch))  // count an emoji once
+                    UnsureSymbols++;
             }
-            Key(vk, false);
-            Sleep(hold);
-            Key(vk, true);
-            if (shift)
+            TapUnicode(ch, hold);
+        }
+
+        // "0178" for ² (Windows-1252: Alt+0178), "243" for ≤ (code page 437: Alt+243), or null.
+        static string AltCode(char ch)
+        {
+            int b = SingleByte(Ansi, ch);
+            if (b >= 0)
+                return "0" + b.ToString("D3");
+            b = SingleByte(Oem, ch);
+            return b >= 128 ? b.ToString() : null;
+        }
+
+        static int SingleByte(Encoding encoding, char ch)
+        {
+            if (char.IsSurrogate(ch))
+                return -1;
+            try
             {
-                Sleep(Uniform(0.01, 0.03));
-                Key(Native.VK_SHIFT, true);
+                byte[] bytes = encoding.GetBytes(new[] { ch });
+                return bytes.Length == 1 ? bytes[0] : -1;
+            }
+            catch (EncoderFallbackException)
+            {
+                return -1;
             }
         }
 
-        static void TapUnicode(char ch, double hold)
+        // Alt codes are only used in Remote PC mode, so every step gets the careful timing.
+        void TapAltCode(string digits)
         {
+            KeyGap();
+            Key(Native.VK_MENU, false);
+            Sleep(RemoteGap);
+            foreach (char d in digits)
+            {
+                int vk = Native.VK_NUMPAD0 + (d - '0');
+                Key(vk, false);
+                Sleep(RemoteGap);
+                Key(vk, true);
+                Sleep(RemoteGap);
+            }
+            Key(Native.VK_MENU, true);
+            lastKeyUp = Now();
+        }
+
+        // Taps are never interrupted, so a key is never left held down.
+        void Tap(int vk, double hold, bool shift)
+        {
+            bool careful = InRemoteMode;
+            if (careful)
+            {
+                KeyGap();
+                hold = Math.Max(hold, RemoteHold);
+            }
+            if (shift)
+            {
+                Key(Native.VK_SHIFT, false);
+                Sleep(careful ? RemoteGap : Uniform(0.015, 0.04));
+            }
+            Key(vk, false);
+            Sleep(hold);
+            KeyUp(vk, careful);
+            if (shift)
+            {
+                Sleep(careful ? RemoteGap : Uniform(0.01, 0.03));
+                KeyUp(Native.VK_SHIFT, careful);
+            }
+            lastKeyUp = Now();
+        }
+
+        void TapUnicode(char ch, double hold)
+        {
+            if (InRemoteMode)
+            {
+                KeyGap();
+                hold = Math.Max(hold, RemoteHold);
+            }
             Send(0, ch, Native.KEYEVENTF_UNICODE);
             Sleep(hold);
             Send(0, ch, Native.KEYEVENTF_UNICODE | Native.KEYEVENTF_KEYUP);
+            lastKeyUp = Now();
+        }
+
+        // In Remote PC mode the key-up goes out twice. The second one does nothing on its own, but if
+        // the first got lost on the way, it stops the other PC from auto-repeating the key ("angullllar").
+        static void KeyUp(int vk, bool careful)
+        {
+            Key(vk, true);
+            if (careful)
+            {
+                Sleep(0.012);
+                Key(vk, true);
+            }
+        }
+
+        // Remote PC mode: leave a clear gap after the previous key before pressing the next one.
+        void KeyGap()
+        {
+            double wait = lastKeyUp + RemoteGap - Now();
+            if (wait > 0)
+                Sleep(wait);
         }
 
         static void Key(int vk, bool up)

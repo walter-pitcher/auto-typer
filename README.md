@@ -14,7 +14,7 @@ In the clip above, Auto Typer types a short note at about 105 words per minute. 
 - **Shows you where it is.** Text that's already typed turns green, and the next letter gets a yellow marker. You'll also see live words per minute and how much time is left.
 - **Pauses when you need it to.** Switch to another window, click somewhere, or press **Esc**, and typing stops right away. Click **Resume** and it goes back to the same window and keeps going from the same letter. If it stopped in the middle of a typo, it cleans that up first.
 - **Types just part of your text.** Highlight a section before you hit Start, and it types only that.
-- **Types into remote computers, too.** Run it on your own PC and click into a Remote Desktop, Parsec, AnyDesk, or similar window. The text gets typed on the remote machine, just like you were typing it yourself.
+- **Types into remote computers, too.** Run it on your own PC and click into a Remote Desktop, Parsec, AnyDesk, or similar window. The text gets typed on the remote machine, just like you were typing it yourself. It notices when you're typing into a remote window and switches to a more careful mode on its own.
 - **Remembers where it typed last time.** Next time you hit Start, it switches straight back to that window. No clicking needed.
 - **Handles accents, symbols, and emoji.** If a character isn't on your keyboard (like é or 😀), it still gets typed.
 - **Remembers your settings.** Your speed, options, and text are still there the next time you open it.
@@ -56,6 +56,7 @@ Want to start over instead? Click **Stop**.
 | **Typos** | The chance that any given letter comes out wrong (then gets fixed). Around 1–3% looks natural. Set it to 0 to turn typos off. |
 | **Shift+Enter for new lines** | Turn this on for chat apps like Slack, Teams, or WhatsApp, where pressing Enter sends the message. |
 | **Skip spaces at line starts** | For code editors that indent new lines for you. Without it, you'd end up with double indentation. |
+| **Remote PC** | Remote desktop apps sometimes lose symbols like ², — or é, and can repeat a letter when keys come in too fast ("angullllar"). Remote PC mode fixes both: it presses each key a little more deliberately and types symbols as Windows Alt codes, which always get through. **Automatic** turns it on whenever you type into Parsec, AnyDesk, Remote Desktop, TeamViewer, RustDesk, VNC, VMware, VirtualBox, or Hyper-V. If your remote app isn't on that list, choose **Always on**. |
 | **Pause when I click** | Pauses on any mouse click, since a click can move the cursor. Turn it off if you want to keep clicking around while it types. |
 | **Always on top** | Keeps the Auto Typer window above everything else so you can always see the progress. |
 | **Keep text after closing** | Saves your text so it's still there next time. Turn it off if you're typing anything private. |
@@ -76,9 +77,12 @@ Want to start over instead? Click **Stop**.
 
 - Use the same keyboard layout (like US English) on both computers. Otherwise some symbols can come out as different characters.
 - Keep the remote window in front while it types. Switching away pauses it, same as always.
-- Some remote tools drop characters that aren't on the keyboard, like é or emoji. If that happens, either stick to plain text or run Auto Typer on the remote computer instead.
+- The status line says "Typing in Remote PC mode" when the careful mode is on. If it doesn't, set **Remote PC** to **Always on**.
+- Alt codes need the remote computer to be running Windows. They cover the common symbols (², ³, ±, ×, ÷, °, ½, curly quotes, dashes, €, ≤, ≥, √, π, ∞, accented letters, and more). A math minus sign (−) goes in as a regular hyphen, which looks the same. If a symbol has no Alt code at all (emoji, for example), Auto Typer tells you to double-check it on the other PC when it's done.
 
-**A few characters look wrong in one app.** Some apps (mostly games) ignore characters that aren't on the keyboard, like é or emoji. Plain letters, numbers, and punctuation work everywhere.
+**Letters get repeated, like "angullllar".** That happens on remote computers when a key press arrives too fast and the other side thinks the key is still held down. Remote PC mode prevents it. Make sure it's on (see above).
+
+**A few characters look wrong in one app.** Some apps (mostly games) ignore characters that aren't on the keyboard, like é or emoji. Plain letters, numbers, and punctuation work everywhere. Setting **Remote PC** to **Always on** often helps there too, since it types symbols as Alt codes.
 
 **Where are my settings stored?** In `%APPDATA%\AutoTyper` (paste that into File Explorer's address bar). Delete the folder to reset everything. Nothing ever leaves your computer, and Auto Typer doesn't use the internet at all.
 

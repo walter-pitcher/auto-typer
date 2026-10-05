@@ -57,7 +57,7 @@ namespace AutoTyper
             }
             ClearHighlight();
             plan = new TypingPlan(text, speed.Value, (double)typo.Value / 100.0, null);
-            typist = new Typist(Handle, shiftEnter.Checked, pauseOnClick.Checked);
+            typist = new Typist(Handle, shiftEnter.Checked, pauseOnClick.Checked) { Remote = remote.SelectedIndex };
             started = false;
             typingTime.Reset();
             progress.Value = 0;
@@ -123,7 +123,8 @@ namespace AutoTyper
                         message = "Couldn't switch to that window. Click into the box instead…  (Esc cancels)";
                     t.WaitForClick();
                 }
-                message = "Typing…  Press Esc or switch windows to pause.";
+                message = t.InRemoteMode ? "Typing in Remote PC mode…  Press Esc to pause."
+                                         : "Typing…  Press Esc or switch windows to pause.";
                 t.Typing = true;
                 t.Wait(0.3 + 0.4 * new Random().NextDouble());
                 t.EraseDirty();
@@ -181,7 +182,9 @@ namespace AutoTyper
             {
                 pill.Set("Done", Theme.Green);
                 progress.BarColor = Theme.Green;
-                status.Text = "Done! All " + plan.Text.Length.ToString("N0") + " characters typed.";
+                int unsure = typist.UnsureSymbols;  // no Alt code: a remote window may have dropped them
+                status.Text = unsure == 0 ? "Done! All " + plan.Text.Length.ToString("N0") + " characters typed."
+                    : "Done. Check " + unsure + (unsure == 1 ? " symbol" : " symbols") + " on the other PC (no Alt code).";
             }
             else if (stop != null)
             {
@@ -278,6 +281,10 @@ namespace AutoTyper
         }
 
         // Shows text[0..pos) as typed and marks the next character, keeping it in view.
+        // Recoloring works by selecting text, and every selection scrolls the box to it. This runs
+        // many times a second, so drawing stays off until the end (no in-between scrolls on screen),
+        // the view goes back to where it was, and it only moves when the next letter is out of
+        // sight. Otherwise the text visibly shakes up and down while typing.
         void UpdateHighlight(int pos, bool force)
         {
             if (map == null || map.Length == 0)
@@ -287,29 +294,79 @@ namespace AutoTyper
             if (pos == highlighted && next == marked && !force)
                 return;
             changingHighlight = true;
+            Native.POINT before = ScrollPos();
+            int first = int.MaxValue, last = -1;  // changed characters
             Redraw(false);
             try
             {
                 if (marked >= 0)
+                {
                     Mark(marked, 1, Theme.Card, Theme.Text);
+                    Span(ref first, ref last, marked, marked);
+                }
                 if (pos > highlighted)
                 {
                     int a = map[highlighted], b = map[pos - 1] + 1;
                     Mark(a, b - a, Theme.TypedBack, Theme.TypedText);
+                    Span(ref first, ref last, a, b - 1);
                 }
                 highlighted = pos;
                 marked = next;
                 if (next >= 0)
+                {
                     Mark(next, 1, phase == Phase.Paused ? Theme.PausedBack : Theme.NextBack, Theme.Text);
-                editor.Select(next >= 0 ? next : map[pos - 1] + 1, 0);
-                editor.ScrollToCaret();
+                    Span(ref first, ref last, next, next);
+                }
+                int caret = next >= 0 ? next : map[pos - 1] + 1;
+                editor.Select(caret, 0);
+                SetScrollPos(before);
+                if (!InView(caret))
+                    editor.ScrollToCaret();
                 highlightShown = true;
             }
             finally
             {
-                Redraw(true);
+                Native.SendMessage(editor.Handle, Native.WM_SETREDRAW, (IntPtr)1, IntPtr.Zero);
+                Native.POINT after = ScrollPos();
+                if (after.X != before.X || after.Y != before.Y || last < 0)
+                    editor.Invalidate();
+                else
+                    RepaintChars(first, last);
                 changingHighlight = false;
             }
+        }
+
+        static void Span(ref int first, ref int last, int from, int to)
+        {
+            first = Math.Min(first, from);
+            last = Math.Max(last, to);
+        }
+
+        Native.POINT ScrollPos()
+        {
+            var p = new Native.POINT();
+            Native.SendMessage(editor.Handle, Native.EM_GETSCROLLPOS, IntPtr.Zero, ref p);
+            return p;
+        }
+
+        void SetScrollPos(Native.POINT p)
+        {
+            Native.SendMessage(editor.Handle, Native.EM_SETSCROLLPOS, IntPtr.Zero, ref p);
+        }
+
+        // Whether the whole line of this character is inside the visible part of the box.
+        bool InView(int index)
+        {
+            int y = editor.GetPositionFromCharIndex(Math.Min(index, Math.Max(0, editor.TextLength - 1))).Y;
+            return y >= 0 && y + editor.Font.Height <= editor.ClientSize.Height;
+        }
+
+        // Repaint just the lines from character `first` to `last`.
+        void RepaintChars(int first, int last)
+        {
+            int top = editor.GetPositionFromCharIndex(first).Y;
+            int bottom = editor.GetPositionFromCharIndex(Math.Min(last, Math.Max(0, editor.TextLength - 1))).Y + editor.Font.Height;
+            editor.Invalidate(new Rectangle(0, top - 2, editor.ClientSize.Width, bottom - top + 4));
         }
 
         void ClearHighlight()
