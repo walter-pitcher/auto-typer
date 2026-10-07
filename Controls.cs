@@ -268,7 +268,21 @@ namespace AutoTyper
 
     static class AppIcon
     {
+        // The icon built into the exe (assets\Window.ico: 16-64 px, so the title bar and the
+        // taskbar each get a sharp size). If it's missing, a simple one is drawn instead.
         public static Icon Create()
+        {
+            try
+            {
+                using (var stream = typeof(AppIcon).Assembly.GetManifestResourceStream("Window.ico"))
+                    if (stream != null)
+                        return new Icon(stream);
+            }
+            catch (Exception) { }
+            return Drawn();
+        }
+
+        static Icon Drawn()
         {
             using (var bmp = new Bitmap(32, 32))
             {

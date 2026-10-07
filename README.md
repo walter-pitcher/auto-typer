@@ -1,3 +1,5 @@
+<img src="docs/icon.png" width="88" alt="Auto Typer icon: a white key with the letter A and a typing cursor">
+
 # Auto Typer
 
 Auto Typer types your text into any window on your PC, one key at a time, the way a real person would. Paste your text, click **Start Typing**, click into the box where it should go, and watch it type.
@@ -110,3 +112,4 @@ If the build says it can't write the file, close Auto Typer first and run it aga
 | `MainForm.Typing.cs` | Starting, pausing, resuming, the green highlight, and the live stats |
 | `Controls.cs` | Colors, the custom buttons and progress bar, and saved settings |
 | `AutoTyper.cs` | The entry point |
+| `assets/` | The app icon: `AutoTyper.ico` for the exe, `Window.ico` for the window |
