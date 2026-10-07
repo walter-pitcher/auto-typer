@@ -55,7 +55,7 @@ Want to start over instead? Click **Stop**.
 | **Speed** | How fast it types, in words per minute. Most people type somewhere between 40 and 80. The pauses and typo fixes are built into the speed, so longer texts finish close to what you set. Short ones run a little slower, since it eases into it at the start like a person would. |
 | **Typos** | The chance that any given letter comes out wrong (then gets fixed). Around 1–3% looks natural. Set it to 0 to turn typos off. |
 | **Shift+Enter for new lines** | Turn this on for chat apps like Slack, Teams, or WhatsApp, where pressing Enter sends the message. |
-| **Skip spaces at line starts** | For code editors that indent new lines for you. Without it, you'd end up with double indentation. |
+| **Code editor mode** | Turn this on when typing code into an editor like VS Code, LeetCode, HackerRank, Replit, or Jupyter. Those editors indent new lines, close brackets, and pop up autocomplete on their own, which normally wrecks typed code. In this mode every line gets exactly the indentation from your text, brackets the editor added by itself get dropped (so you don't end up with `}}`), and autocomplete can't swallow the Enter key. Start on an empty line or at the end of the code. |
 | **Remote PC** | Remote desktop apps sometimes lose symbols like ², — or é, and can repeat a letter when keys come in too fast ("angullllar"). Remote PC mode fixes both: it presses each key a little more deliberately and types symbols as Windows Alt codes, which always get through. **Automatic** turns it on whenever you type into Parsec, AnyDesk, Remote Desktop, TeamViewer, RustDesk, VNC, VMware, VirtualBox, or Hyper-V. If your remote app isn't on that list, choose **Always on**. |
 | **Pause when I click** | Pauses on any mouse click, since a click can move the cursor. Turn it off if you want to keep clicking around while it types. |
 | **Always on top** | Keeps the Auto Typer window above everything else so you can always see the progress. |
@@ -81,6 +81,8 @@ Want to start over instead? Click **Stop**.
 - Alt codes need the remote computer to be running Windows. They cover the common symbols (², ³, ±, ×, ÷, °, ½, curly quotes, dashes, €, ≤, ≥, √, π, ∞, accented letters, and more). A math minus sign (−) goes in as a regular hyphen, which looks the same. If a symbol has no Alt code at all (emoji, for example), Auto Typer tells you to double-check it on the other PC when it's done.
 
 **Letters get repeated, like "angullllar".** That happens on remote computers when a key press arrives too fast and the other side thinks the key is still held down. Remote PC mode prevents it. Make sure it's on (see above).
+
+**Typing code.** Turn on **Code editor mode** first. Without it, the editor's own indentation stacks on top of yours and every line drifts further to the right, and you get doubled closing brackets. Click on an empty line (or at the very end of the code) before you start. In this mode, when a line ends with `{`, `(`, `[`, or `>`, anything after the cursor on that line gets replaced. One thing it can't fix: HTML editors that close a tag in the middle of a line (type `<b>` and get `<b></b>`) may still leave an extra closing tag.
 
 **A few characters look wrong in one app.** Some apps (mostly games) ignore characters that aren't on the keyboard, like é or emoji. Plain letters, numbers, and punctuation work everywhere. Setting **Remote PC** to **Always on** often helps there too, since it types symbols as Alt codes.
 

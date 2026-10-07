@@ -13,6 +13,7 @@ namespace AutoTyper
     static class Native
     {
         public const uint INPUT_KEYBOARD = 1;
+        public const uint KEYEVENTF_EXTENDEDKEY = 0x0001;
         public const uint KEYEVENTF_KEYUP = 0x0002;
         public const uint KEYEVENTF_UNICODE = 0x0004;
         public const int VK_LBUTTON = 0x01;
@@ -25,6 +26,8 @@ namespace AutoTyper
         public const int VK_MENU = 0x12;
         public const int VK_CAPITAL = 0x14;
         public const int VK_ESCAPE = 0x1B;
+        public const int VK_END = 0x23;
+        public const int VK_HOME = 0x24;
         public const int VK_LWIN = 0x5B;
         public const int VK_RWIN = 0x5C;
         public const int VK_NUMPAD0 = 0x60;
@@ -350,6 +353,12 @@ namespace AutoTyper
                         Tap(Native.VK_BACK, a.Seconds, false);
                         Dirty--;
                         break;
+                    case ActionKind.Select:  // Shift+Home / Shift+End: selects, types nothing
+                        Check();
+                        WaitForModifiers();
+                        clock += a.Seconds;
+                        Tap(a.Char == 'S' ? Native.VK_HOME : Native.VK_END, a.Seconds, true);
+                        break;
                 }
             }
         }
@@ -503,7 +512,11 @@ namespace AutoTyper
 
         static void Key(int vk, bool up)
         {
-            Send((ushort)vk, (ushort)Native.MapVirtualKey((uint)vk, 0), up ? Native.KEYEVENTF_KEYUP : 0);
+            // Home, End, arrows, Insert, Delete and Page Up/Down share scan codes with the number pad;
+            // without the extended flag they arrive as number pad keys (and digits with Num Lock on).
+            bool extended = (vk >= 0x21 && vk <= 0x28) || vk == 0x2D || vk == 0x2E;
+            Send((ushort)vk, (ushort)Native.MapVirtualKey((uint)vk, 0),
+                 (up ? Native.KEYEVENTF_KEYUP : 0) | (extended ? Native.KEYEVENTF_EXTENDEDKEY : 0));
         }
 
         static void Send(ushort vk, ushort scan, uint flags)

@@ -16,7 +16,7 @@ namespace AutoTyper
         readonly Label speedValue;
         readonly NumericUpDown typo;
         readonly ComboBox remote;
-        readonly CheckBox shiftEnter, skipIndent, pauseOnClick, onTop, keepText, remember;
+        readonly CheckBox shiftEnter, codeMode, pauseOnClick, onTop, keepText, remember;
         readonly Label savedLabel;
         readonly LinkLabel forget;
         readonly FlatButton mainButton, stopButton;
@@ -148,7 +148,12 @@ namespace AutoTyper
             shiftEnter = Check("Shift+Enter for new lines", "shiftEnter", false, "For chat apps where Enter sends the message.");
             pauseOnClick = Check("Pause when I click", "pauseOnClick", true,
                                  "A click can move the cursor, so typing pauses until you press Resume.");
-            skipIndent = Check("Skip spaces at line starts", "skipIndent", false, "For code editors that indent new lines by themselves.");
+            // Replaces the older "Skip spaces at line starts" option, so that choice carries over.
+            codeMode = Check("Code editor mode", "codeMode", settings.Bool("skipIndent", false),
+                             "For code editors (VS Code, LeetCode, HackerRank, Replit, Jupyter, ...) that indent\n" +
+                             "new lines and close brackets by themselves. Every line gets exactly the indent\n" +
+                             "from your text, brackets the editor added are dropped, and autocomplete\n" +
+                             "pop-ups can't swallow the Enter key.");
             onTop = Check("Always on top", "onTop", true, null);
             remember = Check("Remember target:", "remember", true,
                              "Next time, switch straight back to the same window instead of waiting for a click.");
@@ -160,7 +165,7 @@ namespace AutoTyper
             rememberRow.Controls.AddRange(new Control[] { remember, savedLabel, forget });
             checks.Controls.Add(shiftEnter, 0, 0);
             checks.Controls.Add(pauseOnClick, 1, 0);
-            checks.Controls.Add(skipIndent, 0, 1);
+            checks.Controls.Add(codeMode, 0, 1);
             checks.Controls.Add(onTop, 1, 1);
             checks.Controls.Add(rememberRow, 0, 2);
             checks.SetColumnSpan(rememberRow, 2);
@@ -328,7 +333,7 @@ namespace AutoTyper
             settings.Set("speed", speed.Value);
             settings.Set("typo", typo.Value);
             settings.Set("remote", remote.SelectedIndex);
-            foreach (CheckBox box in new[] { shiftEnter, skipIndent, pauseOnClick, onTop, keepText, remember })
+            foreach (CheckBox box in new[] { shiftEnter, codeMode, pauseOnClick, onTop, keepText, remember })
                 settings.Set((string)box.Tag, box.Checked);
             settings.Save(keepText.Checked ? editor.Text : "");
         }
