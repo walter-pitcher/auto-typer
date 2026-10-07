@@ -72,6 +72,7 @@ namespace AutoTyper
                 if (editor.ReadOnly)
                     return;
                 editor.Focus();
+                BeforeEdit();
                 editor.SelectAll();
                 editor.SelectedText = "";  // unlike Clear(), this can be undone
             };
@@ -184,7 +185,7 @@ namespace AutoTyper
                                        TextAlign = ContentAlignment.MiddleLeft, Margin = new Padding(0) };
             // Fixed width: the numbers change many times a second, and a growing or shrinking
             // label would keep shifting the layout next to it.
-            stats = new SteadyLabel { AutoSize = false, Size = new Size(250, 22), ForeColor = Theme.Muted,
+            stats = new SteadyLabel { AutoSize = false, Size = new Size(290, 22), ForeColor = Theme.Muted, AutoEllipsis = true,
                                       TextAlign = ContentAlignment.MiddleRight, Margin = new Padding(8, 0, 0, 0) };
             statusRow.Controls.Add(status, 0, 0);
             statusRow.Controls.Add(stats, 1, 0);
@@ -192,7 +193,19 @@ namespace AutoTyper
 
             var buttons = Grid(Theme.Window, Auto(), Auto(), Fill());
             mainButton = new FlatButton { Size = new Size(200, 42), Font = new Font("Segoe UI Semibold", 10.5F), Margin = new Padding(0, 0, 8, 0) };
-            mainButton.Click += (s, e) => MainAction();
+            // Pressing the mouse on Pause already pauses typing (the click takes the focus), so by the
+            // time the click lands the button says Resume. A click only counts for what the button
+            // showed when it was pressed; otherwise Pause would pause and resume right away.
+            Phase pressedIn = Phase.Idle;
+            DateTime pressedAt = DateTime.MinValue;
+            mainButton.MouseDown += (s, e) => { pressedIn = phase; pressedAt = DateTime.UtcNow; };
+            mainButton.Click += (s, e) =>
+            {
+                bool changed = (DateTime.UtcNow - pressedAt).TotalSeconds < 3 && phase != pressedIn;
+                pressedAt = DateTime.MinValue;
+                if (!changed)
+                    MainAction();
+            };
             stopButton = new FlatButton { Kind = ButtonKind.Secondary, Text = "Stop", Size = new Size(100, 42), Margin = new Padding(0) };
             stopButton.Click += (s, e) => StopTyping();
             buttons.Controls.Add(mainButton, 0, 0);
@@ -239,13 +252,15 @@ namespace AutoTyper
             editor.TextChanged += (s, e) =>
             {
                 if (phase == Phase.Idle && !changingHighlight)
-                    ClearHighlight();
+                    ClearHighlight(false);  // after the edit: keep it undoable
                 UpdateCounts();
             };
             editor.SelectionChanged += (s, e) => UpdateCounts();
-            // Going back to editing removes the highlight of the last run.
-            editor.Enter += (s, e) => { if (phase == Phase.Idle) ClearHighlight(); };
-            editor.MouseDown += (s, e) => { if (phase == Phase.Idle) ClearHighlight(); };
+            // Going back to editing removes the highlight of the last run, before any change is made.
+            editor.Enter += (s, e) => BeforeEdit();
+            editor.MouseDown += (s, e) => BeforeEdit();
+            editor.KeyDown += (s, e) => BeforeEdit();
+            editor.BeforePaste += (s, e) => BeforeEdit();
             KeyDown += (s, e) =>
             {
                 if (e.Control && e.KeyCode == Keys.Enter)
@@ -257,6 +272,11 @@ namespace AutoTyper
 
             Load += (s, e) =>
             {
+                // Fit on the screen: with large display scaling or on a small laptop screen the window
+                // would be taller than the screen, with the buttons out of reach.
+                Rectangle work = Screen.FromControl(this).WorkingArea;
+                Size = new Size(Math.Min(Width, work.Width), Math.Min(Height, work.Height));
+                Location = new Point(work.Left + (work.Width - Width) / 2, work.Top + (work.Height - Height) / 2);
                 MinimumSize = new Size(Width, Height * 4 / 5);
                 SetPhase(Phase.Idle);
                 status.Text = "Paste your text, press Start Typing, then click into the box where it should go.";
@@ -310,11 +330,11 @@ namespace AutoTyper
         ContextMenuStrip EditorMenu()
         {
             var menu = new ContextMenuStrip();
-            var undo = new ToolStripMenuItem("Undo", null, (s, e) => editor.Undo());
-            var cut = new ToolStripMenuItem("Cut", null, (s, e) => editor.Cut());
+            var undo = new ToolStripMenuItem("Undo", null, (s, e) => { BeforeEdit(); editor.Undo(); });
+            var cut = new ToolStripMenuItem("Cut", null, (s, e) => { BeforeEdit(); editor.Cut(); });
             var copy = new ToolStripMenuItem("Copy", null, (s, e) => editor.Copy());
             var paste = new ToolStripMenuItem("Paste", null, (s, e) => editor.PastePlain());
-            var delete = new ToolStripMenuItem("Delete", null, (s, e) => editor.SelectedText = "");
+            var delete = new ToolStripMenuItem("Delete", null, (s, e) => { BeforeEdit(); editor.SelectedText = ""; });
             var all = new ToolStripMenuItem("Select All", null, (s, e) => editor.SelectAll());
             menu.Items.AddRange(new ToolStripItem[] { undo, new ToolStripSeparator(), cut, copy, paste, delete, new ToolStripSeparator(), all });
             menu.Opening += (s, e) =>
@@ -323,9 +343,16 @@ namespace AutoTyper
                 undo.Enabled = editable && editor.CanUndo;
                 cut.Enabled = delete.Enabled = editable && selected;
                 copy.Enabled = selected;
-                paste.Enabled = editable && Clipboard.ContainsText();
+                paste.Enabled = editable && TextEditor.ClipboardHasText();
             };
             return menu;
+        }
+
+        // Right before the user changes the text (or starts to): drop the highlight of the last run.
+        void BeforeEdit()
+        {
+            if (phase == Phase.Idle)
+                ClearHighlight(true);
         }
 
         void SaveSettings()
@@ -433,6 +460,8 @@ namespace AutoTyper
                 Native.GetWindowText(savedTarget, sb, sb.Capacity);
                 string title = sb.Length == 0 ? "(window without a title)" : sb.ToString();
                 text = "\"" + (title.Length > 50 ? title.Substring(0, 49) + "…" : title) + "\"";
+                if (!Native.IsShown(savedTarget))
+                    text += " (hidden, so it won't be used)";
             }
             if (savedLabel.Text != text)
                 savedLabel.Text = text;

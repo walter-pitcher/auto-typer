@@ -233,6 +233,10 @@ namespace AutoTyper
         static readonly Font PlaceholderFont = new Font("Segoe UI", 10F);
 
         public string Placeholder = "";
+        bool wasEmpty = true;
+
+        // Raised right before a paste changes the text.
+        public event EventHandler BeforePaste;
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
@@ -241,19 +245,51 @@ namespace AutoTyper
                 PastePlain();
                 return true;
             }
-            // RichEdit formatting shortcuts (alignment, line spacing) make no sense for plain text.
-            Keys key = keyData & Keys.KeyCode;
-            if ((keyData & Keys.Modifiers) == Keys.Control &&
-                (key == Keys.L || key == Keys.E || key == Keys.R || key == Keys.J || key == Keys.D1 || key == Keys.D2 || key == Keys.D5))
+            // RichEdit formatting shortcuts (alignment, line spacing, bullets, all caps, superscript,
+            // font size) make no sense for plain text.
+            Keys key = keyData & Keys.KeyCode, mods = keyData & Keys.Modifiers;
+            if (mods == Keys.Control &&
+                (key == Keys.L || key == Keys.E || key == Keys.R || key == Keys.J || key == Keys.D1 || key == Keys.D2 ||
+                 key == Keys.D5 || key == Keys.Oemplus))
+                return true;
+            if (mods == (Keys.Control | Keys.Shift) &&
+                (key == Keys.A || key == Keys.L || key == Keys.Oemplus || key == Keys.OemPeriod || key == Keys.Oemcomma))
                 return true;
             return base.ProcessCmdKey(ref msg, keyData);
         }
 
         public void PastePlain()
         {
-            if (ReadOnly || !Clipboard.ContainsText())
+            string text;
+            if (ReadOnly || (text = ClipboardText()) == null)
                 return;
-            SelectedText = Clipboard.GetText().Replace("\r\n", "\n");
+            if (BeforePaste != null)
+                BeforePaste(this, EventArgs.Empty);
+            SelectedText = text.Replace("\r\n", "\n");
+        }
+
+        // Another app can hold the clipboard open for a moment; that's not worth an error box.
+        public static bool ClipboardHasText()
+        {
+            try { return Clipboard.ContainsText(); }
+            catch (Exception) { return false; }
+        }
+
+        static string ClipboardText()
+        {
+            try { return Clipboard.ContainsText() ? Clipboard.GetText() : null; }
+            catch (Exception) { return null; }
+        }
+
+        // RichEdit only repaints the first line when the first letter comes in, which would leave the
+        // rest of the hint behind; repaint everything when the box becomes empty or stops being empty.
+        protected override void OnTextChanged(EventArgs e)
+        {
+            base.OnTextChanged(e);
+            bool empty = TextLength == 0;
+            if (empty != wasEmpty)
+                Invalidate();
+            wasEmpty = empty;
         }
 
         protected override void WndProc(ref Message m)
@@ -349,10 +385,17 @@ namespace AutoTyper
             values[key] = value is bool ? ((bool)value ? "1" : "0") : Convert.ToString(value, CultureInfo.InvariantCulture);
         }
 
+        bool textUnreadable;  // the saved text exists but couldn't be read (locked, syncing)
+
         public string LoadText()
         {
-            try { return File.ReadAllText(Path.Combine(dir, "text.txt"), Encoding.UTF8); }
-            catch (Exception) { return ""; }
+            string path = Path.Combine(dir, "text.txt");
+            try { return File.Exists(path) ? File.ReadAllText(path, Encoding.UTF8) : ""; }
+            catch (Exception)
+            {
+                textUnreadable = true;  // so it doesn't get deleted as if it were empty
+                return "";
+            }
         }
 
         public void Save(string text)
@@ -363,14 +406,33 @@ namespace AutoTyper
                 var lines = new List<string>();
                 foreach (var kv in values)
                     lines.Add(kv.Key + "=" + kv.Value);
-                File.WriteAllLines(Path.Combine(dir, "settings.txt"), lines.ToArray());
+                WriteSafely(Path.Combine(dir, "settings.txt"), string.Join("\r\n", lines.ToArray()));
                 string textPath = Path.Combine(dir, "text.txt");
                 if (text.Length > 0)
-                    File.WriteAllText(textPath, text, Encoding.UTF8);
-                else if (File.Exists(textPath))
+                    WriteSafely(textPath, text);
+                else if (!textUnreadable && File.Exists(textPath))
                     File.Delete(textPath);
             }
             catch (Exception) { }  // settings are a convenience; never fail because of them
+        }
+
+        // Write a new copy first, then swap it in, so a crash halfway never leaves a cut-off file.
+        static void WriteSafely(string path, string content)
+        {
+            string temp = path + ".tmp";
+            File.WriteAllText(temp, content, Encoding.UTF8);
+            try
+            {
+                if (File.Exists(path))
+                    File.Replace(temp, path, null);
+                else
+                    File.Move(temp, path);
+            }
+            catch (IOException)
+            {
+                File.Copy(temp, path, true);
+                File.Delete(temp);
+            }
         }
     }
 }

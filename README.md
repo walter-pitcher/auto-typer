@@ -18,7 +18,7 @@ In the clip above, Auto Typer types a short note at about 105 words per minute. 
 - **Types just part of your text.** Highlight a section before you hit Start, and it types only that.
 - **Types into remote computers, too.** Run it on your own PC and click into a Remote Desktop, Parsec, AnyDesk, or similar window. The text gets typed on the remote machine, just like you were typing it yourself. It notices when you're typing into a remote window and switches to a more careful mode on its own.
 - **Remembers where it typed last time.** Next time you hit Start, it switches straight back to that window. No clicking needed.
-- **Handles accents, symbols, and emoji.** If a character isn't on your keyboard (like é or 😀), it still gets typed.
+- **Handles accents, symbols, and emoji.** If a character isn't on your keyboard (like é or 😀), it still gets typed. It works with any keyboard layout, including ones with accent keys like US-International, German, or French, and with Caps Lock on.
 - **Remembers your settings.** Your speed, options, and text are still there the next time you open it.
 
 ## Getting started
@@ -73,14 +73,16 @@ Want to start over instead? Click **Stop**.
 
 ## Tips and troubleshooting
 
-**Nothing shows up in a certain app.** If that app is running as administrator, Windows won't let a regular app type into it. Right-click Auto Typer and choose **Run as administrator**, then try again.
+**It paused and says Windows blocked the keys.** That app is running as administrator, and Windows won't let a regular app type into it. Right-click Auto Typer and choose **Run as administrator**, then try again. Auto Typer also pauses on its own if the screen locks or a security prompt pops up while it types, so none of your text gets lost.
+
+**It won't type into an app that's minimized to the tray.** That's on purpose. If the window you typed into last time is hidden (Discord, Slack, and Teams do this when you close them), Auto Typer asks you to click into a box instead of typing where you can't see it.
 
 **Typing on a remote computer.** You don't have to install anything on the remote machine. Keep Auto Typer on your own PC, click Start Typing, then click inside the remote window, right where the text should go. Auto Typer sends real key presses, so Remote Desktop, Parsec, AnyDesk, and similar tools pass them along like your own typing. A few things help:
 
 - Use the same keyboard layout (like US English) on both computers. Otherwise some symbols can come out as different characters.
 - Keep the remote window in front while it types. Switching away pauses it, same as always.
 - The status line says "Typing in Remote PC mode" when the careful mode is on. If it doesn't, set **Remote PC** to **Always on**.
-- Alt codes need the remote computer to be running Windows. They cover the common symbols (², ³, ±, ×, ÷, °, ½, curly quotes, dashes, €, ≤, ≥, √, π, ∞, accented letters, and more). A math minus sign (−) goes in as a regular hyphen, which looks the same. If a symbol has no Alt code at all (emoji, for example), Auto Typer tells you to double-check it on the other PC when it's done.
+- Alt codes need the remote computer to be running Windows. They cover the common symbols (², ³, ±, ×, ÷, °, ½, curly quotes, dashes, €, ≤, ≥, √, π, ∞, accented letters, and more). A math minus sign (−) goes in as a regular hyphen, which looks the same. Math symbols like ≤, √, and π depend on the remote PC's language settings (they're right on US systems). For those, and for anything with no Alt code at all (emoji, for example), Auto Typer tells you to double-check them on the other PC when it's done.
 
 **Letters get repeated, like "angullllar".** That happens on remote computers when a key press arrives too fast and the other side thinks the key is still held down. Remote PC mode prevents it. Make sure it's on (see above).
 
