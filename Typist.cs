@@ -19,6 +19,7 @@ namespace AutoTyper
         public const int VK_LBUTTON = 0x01;
         public const int VK_RBUTTON = 0x02;
         public const int VK_BACK = 0x08;
+        public const int VK_SPACE = 0x20;
         public const int VK_TAB = 0x09;
         public const int VK_RETURN = 0x0D;
         public const int VK_SHIFT = 0x10;
@@ -41,6 +42,8 @@ namespace AutoTyper
         public const int WM_SETREDRAW = 0x000B;
         public const int EM_GETSCROLLPOS = 0x04DD;
         public const int EM_SETSCROLLPOS = 0x04DE;
+        public const int EM_GETFIRSTVISIBLELINE = 0x00CE;
+        public const int EM_LINESCROLL = 0x00B6;
 
         [StructLayout(LayoutKind.Sequential)]
         public struct KEYBDINPUT { public ushort wVk; public ushort wScan; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
@@ -72,6 +75,27 @@ namespace AutoTyper
         [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr hwnd, uint cmd);
         [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hwnd);
         [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
+
+        [DllImport("user32.dll")] public static extern uint MapVirtualKeyEx(uint code, uint mapType, IntPtr layout);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+        public static extern int ToUnicodeEx(uint vk, uint scan, byte[] keyState, [Out] char[] buf, int bufSize, uint flags, IntPtr layout);
+        [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr hwnd, int attribute, out int value, int size);
+
+        // A window the user can actually see: not hidden (closed to the tray) and not cloaked
+        // (a suspended store app, or one on another virtual desktop).
+        public static bool IsShown(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero || !IsWindow(hwnd) || !IsWindowVisible(hwnd))
+                return false;
+            int cloaked;
+            try
+            {
+                if (DwmGetWindowAttribute(hwnd, 14, out cloaked, 4) == 0 && cloaked != 0)  // DWMWA_CLOAKED
+                    return false;
+            }
+            catch (Exception) { }
+            return true;
+        }
 
         [DllImport("user32.dll", SetLastError = true)] public static extern uint SendInput(uint count, INPUT[] inputs, int size);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern uint MapVirtualKey(uint code, uint mapType);
@@ -111,8 +135,15 @@ namespace AutoTyper
     class Typist
     {
         static readonly Stopwatch Clock = Stopwatch.StartNew();
-        // Clicking the desktop or taskbar should not start typing there.
-        static readonly HashSet<string> ShellClasses = new HashSet<string> { "Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd" };
+        // Clicking the desktop, taskbar, Start menu / search, Task View or a tray flyout should not
+        // start typing there (Enter in Start search would launch whatever it found).
+        static readonly HashSet<string> ShellClasses = new HashSet<string> {
+            "Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd", "Windows.UI.Core.CoreWindow",
+            "NotifyIconOverflowWindow", "TopLevelWindowForOverflowXamlIsland", "XamlExplorerHostIslandWindow",
+            "MultitaskingViewFrame", "TaskListThumbnailWnd", "ForegroundStaging", "Shell_InputSwitchTopLevelWindow",
+        };
+
+        const string BlockedMessage = "Paused: Windows blocked the keys. If that app runs as administrator, run Auto Typer as administrator too.";
 
         // Remote desktop and virtual machine windows (process names). They forward key presses to
         // the other PC, but often drop the Unicode key events used for symbols that aren't on the
@@ -141,6 +172,9 @@ namespace AutoTyper
         IntPtr layout = IntPtr.Zero;
         volatile bool remoteTarget;
         double lastKeyUp;
+        double noForegroundSince;  // when the foreground window went away (lock screen, UAC prompt)
+        bool sendFailed;           // Windows refused a key since the last check
+        IntPtr dirtyIn;            // the window the Dirty keys were typed into
 
         public volatile int Progress;      // text[0..Progress) is typed correctly
         public volatile int Dirty;         // keys typed after Progress that are still in the box (a typo in progress)
@@ -181,6 +215,7 @@ namespace AutoTyper
             layout = Native.GetKeyboardLayout(Native.GetWindowThreadProcessId(hwnd, out pid));
             remoteTarget = IsRemoteViewer(pid);
             lastKeyUp = 0;
+            noForegroundSince = 0;
             target = hwnd;
             ForgetEarlierPresses();  // the click that picked the box must not pause typing
         }
@@ -228,6 +263,19 @@ namespace AutoTyper
             IntPtr fg = Native.GetForegroundWindow();
             if (fg != IntPtr.Zero && fg != target)
                 throw new Stopped(IsOwn(fg) ? "Paused." : "Paused: you switched to another window.", true);
+            // No foreground window at all for a moment: the screen locked, or a UAC / Ctrl+Alt+Del
+            // screen is up. Keys would go nowhere, so pause.
+            if (fg == IntPtr.Zero)
+            {
+                if (noForegroundSince == 0)
+                    noForegroundSince = Now();
+                else if (Now() - noForegroundSince > 0.5)
+                    throw new Stopped("Paused: the screen locked or a security prompt opened.", true);
+            }
+            else
+                noForegroundSince = 0;
+            if (!Native.IsWindowVisible(target))
+                throw new Stopped("Paused: the window you were typing into was hidden.", true);
             if (PauseOnClick && (Hit(Native.VK_LBUTTON) | Hit(Native.VK_RBUTTON)))  // | : clear both
             {
                 Native.POINT p;
@@ -272,7 +320,7 @@ namespace AutoTyper
                     Wait(0.01);
                 Wait(0.15);  // let the click activate the window
                 IntPtr fg = Native.GetForegroundWindow();
-                if (fg != IntPtr.Zero && !IsOwn(fg) && !ShellClasses.Contains(ClassName(fg)))
+                if (fg != IntPtr.Zero && !IsOwn(fg) && Native.IsShown(fg) && !ShellClasses.Contains(ClassName(fg)))
                 {
                     SetTarget(fg);
                     return;
@@ -285,6 +333,8 @@ namespace AutoTyper
         {
             target = IntPtr.Zero;
             ForgetEarlierPresses();  // e.g. the click on Resume
+            if (!Native.IsShown(hwnd))  // hidden (closed to the tray): typing would be invisible
+                return false;
             double end = Now() + 1.5;
             while (Native.GetForegroundWindow() != hwnd)
             {
@@ -303,9 +353,15 @@ namespace AutoTyper
             return sb.ToString();
         }
 
-        // A pause can land in the middle of a typo; erase the wrong keys before going on.
+        // A pause can land in the middle of a typo; erase the wrong keys before going on. Only in the
+        // same window: resuming into another box must not delete the user's own text there.
         public void EraseDirty()
         {
+            if (target != dirtyIn)
+            {
+                Dirty = 0;
+                return;
+            }
             while (Dirty > 0)
             {
                 Wait(Uniform(0.08, 0.16));
@@ -343,8 +399,9 @@ namespace AutoTyper
                         Check();
                         WaitForModifiers();
                         clock += a.Seconds;
-                        Press(a.Char, a.Seconds);
+                        Press(a.Char, a.Low, a.Seconds);
                         Dirty++;
+                        dirtyIn = target;
                         break;
                     case ActionKind.Back:
                         Check();
@@ -352,6 +409,7 @@ namespace AutoTyper
                         clock += a.Seconds;
                         Tap(Native.VK_BACK, a.Seconds, false);
                         Dirty--;
+                        dirtyIn = target;
                         break;
                     case ActionKind.Select:  // Shift+Home / Shift+End: selects, types nothing
                         Check();
@@ -363,60 +421,106 @@ namespace AutoTyper
             }
         }
 
-        void Press(char ch, double hold)
+        // low: the second half of a character outside the basic range (an emoji), or '\0'.
+        void Press(char ch, char low, double hold)
         {
             if (ch == '\n')
                 Tap(Native.VK_RETURN, hold, ShiftEnter);
             else if (ch == '\t')
                 Tap(Native.VK_TAB, hold, false);
+            else if (low != '\0')
+                TypeSymbol(ch, low, hold);
             else
             {
                 short scan = Native.VkKeyScanEx(ch, layout);
                 if (scan == -1 || (scan & 0x600) != 0)  // not on this keyboard layout, or needs Ctrl/Alt
                 {
-                    TypeSymbol(ch, hold);
+                    TypeSymbol(ch, '\0', hold);
                     return;
                 }
-                bool shift = (scan & 0x100) != 0;
-                if (char.IsLetter(ch) && (Native.GetKeyState(Native.VK_CAPITAL) & 1) != 0)
-                    shift = !shift;
-                Tap(scan & 0xFF, hold, shift);
+                int vk = scan & 0xFF;
+                bool dead;
+                bool shift = ShiftFor(ch, vk, (scan & 0x100) != 0, out dead);
+                Tap(vk, hold, shift);
+                if (dead)  // an accent key waits for the next key; Space makes it the character itself
+                    Tap(Native.VK_SPACE, hold, false);
             }
+        }
+
+        // The Shift state that makes this key type ch right now, asked of the keyboard layout itself.
+        // Caps Lock flips letters, but on some layouts digits too (French) and not every letter (ß).
+        // dead: the key is an accent that waits for the next key (" and ' on US-International).
+        bool ShiftFor(char ch, int vk, bool shift, out bool dead)
+        {
+            bool caps = (Native.GetKeyState(Native.VK_CAPITAL) & 1) != 0;
+            foreach (bool s in new[] { shift, !shift })
+                if (Produces(vk, s, caps, out dead) == ch)
+                    return s;
+            dead = false;
+            return caps && char.IsLetter(ch) ? !shift : shift;  // the layout gave no answer
+        }
+
+        // The character this key types with this Shift and Caps Lock state, or '\0'.
+        char Produces(int vk, bool shift, bool caps, out bool dead)
+        {
+            var state = new byte[256];
+            if (shift)
+                state[Native.VK_SHIFT] = 0x80;
+            if (caps)
+                state[Native.VK_CAPITAL] = 0x01;
+            var buf = new char[8];
+            uint scan = Scan(vk);
+            // Flag 4: leave the keyboard state alone (Windows 10 1607 and later).
+            int n = Native.ToUnicodeEx((uint)vk, scan, state, buf, buf.Length, 4, layout);
+            dead = n < 0;
+            if (dead)  // older Windows keeps the accent pending; a second press clears it
+                Native.ToUnicodeEx((uint)vk, scan, state, new char[8], 8, 4, layout);
+            return n == 1 || dead ? buf[0] : '\0';
         }
 
         // A character that isn't on the keyboard, like ², — or é. Unicode key events work in apps on
         // this PC, but remote desktop and VM windows often drop them, so there it goes in as a
         // Windows Alt code (Alt + digits on the number pad): plain key presses that get through.
-        void TypeSymbol(char ch, double hold)
+        void TypeSymbol(char ch, char low, double hold)
         {
             if (InRemoteMode)
             {
-                string code = AltCode(ch);
-                if (code != null)
+                if (low == '\0')
                 {
-                    TapAltCode(code);
-                    return;
+                    bool oem;
+                    string code = AltCode(ch, out oem);
+                    if (code != null)
+                    {
+                        if (oem)  // what these give depends on the remote PC's language settings
+                            UnsureSymbols++;
+                        TapAltCode(code);
+                        return;
+                    }
+                    char plain;
+                    if (Lookalikes.TryGetValue(ch, out plain))
+                    {
+                        Press(plain, '\0', hold);
+                        return;
+                    }
                 }
-                char plain;
-                if (Lookalikes.TryGetValue(ch, out plain))
-                {
-                    Press(plain, hold);
-                    return;
-                }
-                if (!char.IsLowSurrogate(ch))  // count an emoji once
-                    UnsureSymbols++;
+                UnsureSymbols++;
             }
-            TapUnicode(ch, hold);
+            TapUnicode(ch, low, hold);
         }
 
         // "0178" for ² (Windows-1252: Alt+0178), "243" for ≤ (code page 437: Alt+243), or null.
-        static string AltCode(char ch)
+        // oem: a code page 437 code, which only works if the remote PC uses that code page (US).
+        static string AltCode(char ch, out bool oem)
         {
+            oem = false;
+            if (ch < ' ')
+                return null;
             int b = SingleByte(Ansi, ch);
             if (b >= 0)
                 return "0" + b.ToString("D3");
             b = SingleByte(Oem, ch);
-            return b >= 128 ? b.ToString() : null;
+            oem = b >= 128;
+            return oem ? b.ToString() : null;
         }
 
         static int SingleByte(Encoding encoding, char ch)
@@ -445,11 +549,12 @@ namespace AutoTyper
                 int vk = Native.VK_NUMPAD0 + (d - '0');
                 Key(vk, false);
                 Sleep(RemoteGap);
-                Key(vk, true);
+                KeyUp(vk, true);
                 Sleep(RemoteGap);
             }
-            Key(Native.VK_MENU, true);
+            KeyUp(Native.VK_MENU, true);  // a lost Alt key-up would turn the next letters into shortcuts
             lastKeyUp = Now();
+            ThrowIfBlocked();
         }
 
         // Taps are never interrupted, so a key is never left held down.
@@ -475,24 +580,49 @@ namespace AutoTyper
                 KeyUp(Native.VK_SHIFT, careful);
             }
             lastKeyUp = Now();
+            ThrowIfBlocked();
         }
 
-        void TapUnicode(char ch, double hold)
+        void TapUnicode(char ch, char low, double hold)
         {
             if (InRemoteMode)
             {
                 KeyGap();
                 hold = Math.Max(hold, RemoteHold);
             }
-            Send(0, ch, Native.KEYEVENTF_UNICODE);
-            Sleep(hold);
-            Send(0, ch, Native.KEYEVENTF_UNICODE | Native.KEYEVENTF_KEYUP);
+            if (low == '\0')
+            {
+                Send(0, ch, Native.KEYEVENTF_UNICODE);
+                Sleep(hold);
+                Send(0, ch, Native.KEYEVENTF_UNICODE | Native.KEYEVENTF_KEYUP);
+            }
+            else  // both halves of an emoji in one go, so nothing can come between them
+                Send(Unicode(ch, false), Unicode(ch, true), Unicode(low, false), Unicode(low, true));
             lastKeyUp = Now();
+            ThrowIfBlocked();
+        }
+
+        static Native.INPUT Unicode(char ch, bool up)
+        {
+            var input = new Native.INPUT { type = Native.INPUT_KEYBOARD };
+            input.u.ki.wScan = ch;
+            input.u.ki.dwFlags = Native.KEYEVENTF_UNICODE | (up ? Native.KEYEVENTF_KEYUP : 0);
+            return input;
+        }
+
+        // Windows refused a key (the screen locked, or the target runs as administrator and this
+        // app doesn't): pause rather than carry on as if the text had been typed.
+        void ThrowIfBlocked()
+        {
+            if (!sendFailed)
+                return;
+            sendFailed = false;
+            throw new Stopped(BlockedMessage, true);
         }
 
         // In Remote PC mode the key-up goes out twice. The second one does nothing on its own, but if
         // the first got lost on the way, it stops the other PC from auto-repeating the key ("angullllar").
-        static void KeyUp(int vk, bool careful)
+        void KeyUp(int vk, bool careful)
         {
             Key(vk, true);
             if (careful)
@@ -510,23 +640,34 @@ namespace AutoTyper
                 Sleep(wait);
         }
 
-        static void Key(int vk, bool up)
+        void Key(int vk, bool up)
         {
             // Home, End, arrows, Insert, Delete and Page Up/Down share scan codes with the number pad;
             // without the extended flag they arrive as number pad keys (and digits with Num Lock on).
             bool extended = (vk >= 0x21 && vk <= 0x28) || vk == 0x2D || vk == 0x2E;
-            Send((ushort)vk, (ushort)Native.MapVirtualKey((uint)vk, 0),
-                 (up ? Native.KEYEVENTF_KEYUP : 0) | (extended ? Native.KEYEVENTF_EXTENDEDKEY : 0));
+            Send((ushort)vk, (ushort)Scan(vk), (up ? Native.KEYEVENTF_KEYUP : 0) | (extended ? Native.KEYEVENTF_EXTENDEDKEY : 0));
         }
 
-        static void Send(ushort vk, ushort scan, uint flags)
+        // The key's scan code on the target's keyboard layout. Remote desktop apps pass scan codes
+        // on, so they must match the layout the key was picked from.
+        uint Scan(int vk)
         {
-            var inputs = new Native.INPUT[1];
-            inputs[0].type = Native.INPUT_KEYBOARD;
-            inputs[0].u.ki.wVk = vk;
-            inputs[0].u.ki.wScan = scan;
-            inputs[0].u.ki.dwFlags = flags;
-            Native.SendInput(1, inputs, Marshal.SizeOf(typeof(Native.INPUT)));
+            return layout != IntPtr.Zero ? Native.MapVirtualKeyEx((uint)vk, 0, layout) : Native.MapVirtualKey((uint)vk, 0);
+        }
+
+        void Send(ushort vk, ushort scan, uint flags)
+        {
+            var input = new Native.INPUT { type = Native.INPUT_KEYBOARD };
+            input.u.ki.wVk = vk;
+            input.u.ki.wScan = scan;
+            input.u.ki.dwFlags = flags;
+            Send(input);
+        }
+
+        void Send(params Native.INPUT[] inputs)
+        {
+            if (Native.SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(Native.INPUT))) != inputs.Length)
+                sendFailed = true;
         }
 
         static void Sleep(double seconds) { Thread.Sleep((int)Math.Round(seconds * 1000)); }

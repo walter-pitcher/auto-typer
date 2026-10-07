@@ -2,6 +2,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
 
 namespace AutoTyper
@@ -12,11 +13,16 @@ namespace AutoTyper
     {
         public ActionKind Kind;
         public char Char;       // Key: the character; Select: 'S' = Shift+Home, 'E' = Shift+End
+        public char Low;        // Key: second half of a character like an emoji (a surrogate pair), or '\0'
         public double Seconds;  // pause length, or how long the key is held
         public int Pos;         // text[0..Pos) is now typed correctly
 
         public static TypingAction Wait(double s) { return new TypingAction { Kind = ActionKind.Wait, Seconds = s }; }
         public static TypingAction Key(char c, double hold) { return new TypingAction { Kind = ActionKind.Key, Char = c, Seconds = hold }; }
+        public static TypingAction Key(char c, char low, double hold)
+        {
+            return new TypingAction { Kind = ActionKind.Key, Char = c, Low = low, Seconds = hold };
+        }
         public static TypingAction Back(double hold) { return new TypingAction { Kind = ActionKind.Back, Seconds = hold }; }
         public static TypingAction At(int pos) { return new TypingAction { Kind = ActionKind.Pos, Pos = pos }; }
         public static TypingAction Select(bool toLineStart, double hold)
@@ -144,8 +150,17 @@ namespace AutoTyper
                 }
                 NextKey(ch, word, out wait, out hold);
                 yield return TypingAction.Wait(wait);
-                yield return TypingAction.Key(ch, hold);
-                i++;
+                if (char.IsHighSurrogate(ch) && i + 1 < text.Length && char.IsLowSurrogate(text[i + 1]))
+                {
+                    // One character in two halves (an emoji): one key, no pause point in between.
+                    yield return TypingAction.Key(ch, text[i + 1], hold);
+                    i += 2;
+                }
+                else
+                {
+                    yield return TypingAction.Key(ch, hold);
+                    i++;
+                }
                 yield return TypingAction.At(i);
             }
         }
@@ -196,7 +211,7 @@ namespace AutoTyper
                 yield return TypingAction.Wait(Uniform(0.04, 0.1) * Pace);
                 yield return TypingAction.Back(Uniform(0.03, 0.07));
             }
-            prev = '\0';
+            prev = '\n';  // so the next key gets the usual little pause at the start of a line
         }
 
         // Length of the word that starts at text[i], or 0 if no word starts there.
@@ -315,9 +330,20 @@ namespace AutoTyper
             double e = rng.NextDouble();
             int extra = e < 0.45 ? 0 : e < 0.80 ? 1 : 2;
             var sb = new StringBuilder(typed);
-            for (int k = j; k < j + extra && k < text.Length && text[k] != '\n' && (!code || char.IsLetterOrDigit(text[k])); k++)
+            // Never emoji halves or accent marks either: one Backspace can erase more than one of those.
+            for (int k = j; k < j + extra && k < text.Length && text[k] != '\n' && Plain(text[k]) && (!code || char.IsLetterOrDigit(text[k])); k++)
                 sb.Append(text[k]);
             return sb.ToString();
+        }
+
+        // A character that stands on its own: not half of an emoji, an accent mark or an invisible joiner.
+        static bool Plain(char c)
+        {
+            if (char.IsSurrogate(c))
+                return false;
+            UnicodeCategory cat = CharUnicodeInfo.GetUnicodeCategory(c);
+            return cat != UnicodeCategory.NonSpacingMark && cat != UnicodeCategory.SpacingCombiningMark &&
+                   cat != UnicodeCategory.EnclosingMark && cat != UnicodeCategory.Format;
         }
 
         double Uniform(double a, double b) { return a + (b - a) * rng.NextDouble(); }
