@@ -48,7 +48,7 @@ namespace AutoTyper
                 from = Math.Min(editor.SelectionStart, source.Length);
                 length = Math.Min(editor.SelectionLength, source.Length - from);
             }
-            string text = BuildPlanText(source, from, length, skipIndent.Checked, out map);
+            string text = BuildPlanText(source, from, length, out map);
             if (text.Trim().Length == 0)
             {
                 status.Text = "Please enter some text first.";
@@ -56,7 +56,7 @@ namespace AutoTyper
                 return;
             }
             ClearHighlight();
-            plan = new TypingPlan(text, speed.Value, (double)typo.Value / 100.0, null);
+            plan = new TypingPlan(text, speed.Value, (double)typo.Value / 100.0, null, codeMode.Checked);
             typist = new Typist(Handle, shiftEnter.Checked, pauseOnClick.Checked) { Remote = remote.SelectedIndex };
             started = false;
             typingTime.Reset();
@@ -203,7 +203,7 @@ namespace AutoTyper
             phase = p;
             bool idle = p == Phase.Idle;
             editor.ReadOnly = !idle;  // the saved text must not change until the session ends
-            skipIndent.Enabled = idle;
+            codeMode.Enabled = idle;  // the typing plan is built with it
             stopButton.Enabled = !idle;
             stopButton.Text = p == Phase.Waiting && !started ? "Cancel" : "Stop";
             mainButton.Enabled = p != Phase.Waiting;
@@ -254,13 +254,12 @@ namespace AutoTyper
             stats.Text = sb.ToString();
         }
 
-        // The text to type from source[from..from+length), with line breaks as '\n' and, if asked,
-        // without the spaces that start each line. map[k] is the source index of result[k].
-        static string BuildPlanText(string source, int from, int length, bool skipIndent, out int[] map)
+        // The text to type from source[from..from+length), with line breaks as '\n'.
+        // map[k] is the source index of result[k].
+        static string BuildPlanText(string source, int from, int length, out int[] map)
         {
             var sb = new StringBuilder(length);
             var index = new List<int>(length);
-            bool lineStart = false;
             for (int i = from; i < from + length; i++)
             {
                 char c = source[i];
@@ -270,9 +269,6 @@ namespace AutoTyper
                         continue;
                     c = '\n';
                 }
-                if (lineStart && skipIndent && (c == ' ' || c == '\t'))
-                    continue;
-                lineStart = c == '\n';
                 sb.Append(c);
                 index.Add(i);
             }

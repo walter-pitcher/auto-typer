@@ -6,12 +6,12 @@ using System.Text;
 
 namespace AutoTyper
 {
-    enum ActionKind { Wait, Key, Back, Pos }
+    enum ActionKind { Wait, Key, Back, Pos, Select }
 
     struct TypingAction
     {
         public ActionKind Kind;
-        public char Char;
+        public char Char;       // Key: the character; Select: 'S' = Shift+Home, 'E' = Shift+End
         public double Seconds;  // pause length, or how long the key is held
         public int Pos;         // text[0..Pos) is now typed correctly
 
@@ -19,6 +19,10 @@ namespace AutoTyper
         public static TypingAction Key(char c, double hold) { return new TypingAction { Kind = ActionKind.Key, Char = c, Seconds = hold }; }
         public static TypingAction Back(double hold) { return new TypingAction { Kind = ActionKind.Back, Seconds = hold }; }
         public static TypingAction At(int pos) { return new TypingAction { Kind = ActionKind.Pos, Pos = pos }; }
+        public static TypingAction Select(bool toLineStart, double hold)
+        {
+            return new TypingAction { Kind = ActionKind.Select, Char = toLineStart ? 'S' : 'E', Seconds = hold };
+        }
     }
 
     class TypingPlan
@@ -51,16 +55,22 @@ namespace AutoTyper
 
         const string ShiftedSymbols = "~!@#$%^&*()_+{}|:\"<>?";
 
+        // Code editors often close these by themselves: type "{" and a "}" appears after the cursor.
+        const string Openers = "{[(>";
+
         readonly string text;
+        readonly bool code;
         readonly Random rng;
         volatile int wpm, typoPermille;
         double rhythm = 1.0;
         char prev = '\0';
         double lastHold = 0.0;
 
-        public TypingPlan(string text, int wpm, double typoRate, Random rng)
+        // code: Code editor mode, for editors that indent new lines and close brackets on their own.
+        public TypingPlan(string text, int wpm, double typoRate, Random rng, bool code = false)
         {
             this.text = text;
+            this.code = code;
             Wpm = wpm;
             TypoRate = typoRate;
             this.rng = rng ?? new Random();
@@ -89,9 +99,20 @@ namespace AutoTyper
             rhythm = 1.2;  // a little slow at first, like anyone who just started typing
             prev = '\0';
             lastHold = 0.0;
+            // Picking up at the start of a line after a pause: the editor's own indent may still be there.
+            if (code && i > 0 && i < text.Length && text[i - 1] == '\n')
+                foreach (TypingAction a in ReplaceAutoIndent(i))
+                    yield return a;
             while (i < text.Length)
             {
                 char ch = text[i];
+                if (code && ch == '\n')
+                {
+                    foreach (TypingAction a in CodeNewLine(i))
+                        yield return a;
+                    i++;
+                    continue;
+                }
                 int word = WordStartingAt(i);
                 if (i != noTypoAt && Neighbors.ContainsKey(char.ToLowerInvariant(ch)) && rng.NextDouble() < TypoRate)
                 {
@@ -127,6 +148,55 @@ namespace AutoTyper
                 i++;
                 yield return TypingAction.At(i);
             }
+        }
+
+        // Code editor mode: a new line, typed so the editor's helpers don't get in the way.
+        IEnumerable<TypingAction> CodeNewLine(int i)
+        {
+            double wait, hold;
+            char last = i > 0 ? text[i - 1] : '\n';
+            int k = i - 1;
+            while (k >= 0 && (text[k] == ' ' || text[k] == '\t'))
+                k--;
+            if (k >= 0 && Openers.IndexOf(text[k]) >= 0)  // "{" or "{ " at the end of the line
+            {
+                // The editor may have closed the bracket after the cursor ("{|}"). Select whatever it
+                // put there, so Enter replaces it; the text brings its own closing bracket later.
+                yield return TypingAction.Wait(Uniform(0.08, 0.2) * Pace);
+                yield return TypingAction.Select(false, Uniform(0.04, 0.08));
+            }
+            else if (char.IsLetterOrDigit(last) || last == '_')
+            {
+                // After a word an autocomplete pop-up may be open, and Enter would pick a suggestion
+                // instead of starting a new line. A space closes the pop-up; then take it back.
+                yield return TypingAction.Wait(Uniform(0.05, 0.12) * Pace);
+                yield return TypingAction.Key(' ', Uniform(0.035, 0.07));
+                yield return TypingAction.Wait(Uniform(0.06, 0.14) * Pace);
+                yield return TypingAction.Back(Uniform(0.03, 0.07));
+            }
+            NextKey('\n', 0, out wait, out hold);
+            yield return TypingAction.Wait(wait);
+            yield return TypingAction.Key('\n', hold);
+            yield return TypingAction.At(i + 1);
+            foreach (TypingAction a in ReplaceAutoIndent(i + 1))
+                yield return a;
+        }
+
+        // Right after Enter the editor may have indented the new line on its own. Select that indent
+        // (Shift+Home), so the next key typed replaces it and the line gets exactly the text's indent.
+        IEnumerable<TypingAction> ReplaceAutoIndent(int next)
+        {
+            yield return TypingAction.Wait(Uniform(0.06, 0.16) * Pace);
+            yield return TypingAction.Select(true, Uniform(0.04, 0.08));
+            if (next < text.Length && text[next] == '\t')
+            {
+                // Tab on a selection would indent it instead of replacing it: clear the selection first.
+                yield return TypingAction.Wait(Uniform(0.04, 0.1) * Pace);
+                yield return TypingAction.Key(' ', Uniform(0.035, 0.07));
+                yield return TypingAction.Wait(Uniform(0.04, 0.1) * Pace);
+                yield return TypingAction.Back(Uniform(0.03, 0.07));
+            }
+            prev = '\0';
         }
 
         // Length of the word that starts at text[i], or 0 if no word starts there.
@@ -240,11 +310,12 @@ namespace AutoTyper
                 typed = (char.IsUpper(ch) ? char.ToUpperInvariant(wrong) : wrong).ToString();  // nearby key
                 j = i + 1;
             }
-            // Often a letter or two more get typed before the mistake is noticed.
+            // Often a letter or two more get typed before the mistake is noticed. In code, not
+            // brackets or quotes: editors pair those up, and erasing them again can leave one behind.
             double e = rng.NextDouble();
             int extra = e < 0.45 ? 0 : e < 0.80 ? 1 : 2;
             var sb = new StringBuilder(typed);
-            for (int k = j; k < j + extra && k < text.Length && text[k] != '\n'; k++)
+            for (int k = j; k < j + extra && k < text.Length && text[k] != '\n' && (!code || char.IsLetterOrDigit(text[k])); k++)
                 sb.Append(text[k]);
             return sb.ToString();
         }
