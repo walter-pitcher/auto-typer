@@ -25,7 +25,7 @@ In the clip above, Auto Typer types a short note at about 105 words per minute. 
 
 You'll need Windows 10 or 11. There's nothing to install.
 
-1. Download [`dist/AutoTyper.exe`](dist/AutoTyper.exe) and double-click it.
+1. Download [`dist/AutoTyper.exe`](dist/AutoTyper.exe) and double-click it. The window title shows which version you have (like "Auto Typer 3.2"). If something doesn't work, first make sure you're running the latest one.
 2. Paste or type your text into the big box.
 3. Set the speed and how often you want typos (set it to 0% if you don't want any).
 4. Click **Start Typing** (or press **Ctrl+Enter**).

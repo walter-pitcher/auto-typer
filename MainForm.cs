@@ -32,7 +32,9 @@ namespace AutoTyper
         public MainForm()
         {
             SuspendLayout();
-            Text = "Auto Typer";
+            // The version in the title shows at a glance which copy of the app is running.
+            Version v = typeof(MainForm).Assembly.GetName().Version;
+            Text = "Auto Typer " + v.Major + "." + v.Minor;
             Icon = AppIcon.Create();
             Font = new Font("Segoe UI", 9.75F);
             BackColor = Theme.Window;
